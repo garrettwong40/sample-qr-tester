@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AMPS Science</title>
+<style>
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; }
+
+  body{
+    background: radial-gradient(circle at 50% 25%, #1c1c1c 0%, #050505 90%);
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:space-between;   /* title near top, names near bottom */
+    overflow:hidden;
+    position:relative;
+    padding:9vh 24px 10vh;
+    font-family:system-ui,sans-serif;
+  }
+
+  .word{ display:flex; align-items:flex-end; justify-content:center; }
+  .word img{ display:block; height:100%; width:auto; }
+
+  /* ---------- TITLE ---------- */
+  .title{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap: 1.2vh;
+    animation: floaty 4.5s ease-in-out infinite;
+    filter: drop-shadow(0 16px 20px rgba(0,0,0,.55));
+  }
+  .title .word{ height: clamp(56px, 13vw, 132px); }
+  .title .word img{ margin: 0 -0.6vw; }
+
+  @keyframes floaty{
+    0%,100%{ transform: translateY(0) rotate(-.5deg); }
+    50%    { transform: translateY(-14px) rotate(.5deg); }
+  }
+
+  /* ---------- RISING NAMES (anchored near bottom) ---------- */
+  .stage{
+    height: clamp(90px, 20vh, 150px);
+    width:100%;
+    display:flex; align-items:flex-end; justify-content:center;
+    position:relative;
+  }
+  /* soft pink glow that fades in behind the risen name */
+  .glow{
+    position:absolute;
+    bottom:-4%;
+    left:50%;
+    width:70%;
+    height:120%;
+    transform:translateX(-50%);
+    background: radial-gradient(ellipse at center, rgba(255,120,190,.42) 0%, rgba(255,120,190,0) 70%);
+    opacity:0;
+    transition: opacity 1.2s ease;
+    pointer-events:none;
+    filter: blur(6px);
+  }
+  .glow.on{ opacity:1; }
+
+  .name{
+    position:absolute;
+    bottom:0;
+    height:100%;
+    display:flex; align-items:flex-end; justify-content:center;
+    filter: drop-shadow(0 14px 16px rgba(0,0,0,.5));
+  }
+  /* whole-name gentle float. Starts from the exact resting state
+     (translateY 0, no rotation) so there's no snap when it begins. */
+  .name.floating{ animation: nameBob 4.2s ease-in-out infinite; }
+  @keyframes nameBob{
+    0%   { transform: translateY(0)     rotate(0deg); }
+    50%  { transform: translateY(-12px) rotate(.4deg); }
+    100% { transform: translateY(0)     rotate(0deg); }
+  }
+
+  /* each letter is positioned/faded individually via inline styles from JS. */
+  .name img{
+    display:block;
+    height:100%;
+    width:auto;
+    margin: 0 -0.5vw;
+    opacity:0;
+    transform: translateY(220%);
+    transition-property: opacity, transform;
+    transition-timing-function: cubic-bezier(.16,.68,.3,1);
+    will-change: transform, opacity;
+  }
+
+  /* ---------- FINALE "WHOLE TEAM" FRAME ---------- */
+  .finale{
+    position:absolute;
+    inset:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap: 3vh;
+    padding: 6vh 6vw;
+    opacity:0;
+    pointer-events:none;
+    transition: opacity 1s ease, transform 1s ease;
+    transform: scale(.96);
+  }
+  .finale.on{ opacity:1; transform: scale(1); }
+  .finale h2{
+    font-family:"Baloo 2","Nunito",system-ui,sans-serif;
+    font-weight:800;
+    font-size: clamp(26px, 6vw, 60px);
+    letter-spacing:.04em;
+    color:#ff9ecb;
+    text-shadow: 0 0 18px rgba(255,120,190,.55), 0 6px 14px rgba(0,0,0,.5);
+  }
+  .finale .roster{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap: 1.1vh 1.6vw;
+    max-width: 900px;
+  }
+  .finale .chip{
+    font-family:"Baloo 2","Nunito",system-ui,sans-serif;
+    font-weight:800;
+    font-size: clamp(16px, 2.4vw, 30px);
+    color:#ffd6ea;
+    background: linear-gradient(178deg,#ff9ecb 0%,#f25c9c 100%);
+    -webkit-background-clip:text; background-clip:text;
+    -webkit-text-fill-color:transparent;
+    filter: drop-shadow(0 3px 5px rgba(0,0,0,.4));
+    opacity:0;
+    transform: translateY(16px);
+    transition: opacity .5s ease, transform .6s cubic-bezier(.16,.68,.3,1);
+  }
+  .finale.on .chip{ opacity:1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+  <!-- Title -->
+  <div class="title">
+    <div class="word" id="w1"></div>
+    <div class="word" id="w2"></div>
+  </div>
+
+  <!-- Rising names -->
+  <div class="stage" id="stage">
+    <div class="glow" id="glow"></div>
+    <div class="finale" id="finale"></div>
+  </div>
+
+<script>
+  const DIR = "letters/";
+  const names = [
+    "alexijia","amdhanda","achanish","boopalb","bverkhov","nevina",
+    "elcimren","gcwong","jmanas","kriswpan","kynovak","meisamhe",
+    "mozadeh","rninad","pstudans","rpothen","rzmiao","devadula",
+    "saniaki","ssamaga","khatrivi"
+  ];
+
+  // ---- timing (ms) ----
+  const RISE_DUR    = 3800;   // slow, floaty rise per letter (balloon drift)
+  const RISE_SPREAD = 1800;   // random rise delays spread across this window
+  const HOLD        = 2600;   // fully risen + gently bobbing
+  const FADE_DUR    = 1600;   // fade away in place
+  const FADE_SPREAD = 1200;   // random fade delays
+  const GAP         = 500;    // blank pause before next name
+  const FINALE_HOLD = 4200;   // how long the whole-team frame stays up
+
+  const RISE_EASE = "cubic-bezier(.33,.15,.5,1)"; // buoyant, near-constant drift
+
+  const rand = (a,b)=> a + Math.random()*(b-a);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const shuffle = arr => {                 // Fisher–Yates
+    const a = arr.slice();
+    for(let i=a.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [a[i],a[j]] = [a[j],a[i]];
+    }
+    return a;
+  };
+
+  function buildWord(text){
+    const frag = document.createDocumentFragment();
+    for(const ch of text.toUpperCase()){
+      const img = document.createElement("img");
+      img.src = DIR + ch + ".png";
+      img.alt = ch;
+      frag.appendChild(img);
+    }
+    return frag;
+  }
+
+  // Title
+  document.getElementById("w1").appendChild(buildWord("AMPS"));
+  document.getElementById("w2").appendChild(buildWord("SCIENCE"));
+
+  // One .name element per name
+  const stage  = document.getElementById("stage");
+  const glow   = document.getElementById("glow");
+  const finale = document.getElementById("finale");
+
+  const els = names.map(n => {
+    const el = document.createElement("div");
+    el.className = "name";
+    el.appendChild(buildWord(n));
+    stage.appendChild(el);
+    return el;
+  });
+
+  // Build the finale roster once
+  (function buildFinale(){
+    const h = document.createElement("h2");
+    h.textContent = "AMPS Science ♡";
+    const roster = document.createElement("div");
+    roster.className = "roster";
+    names.forEach(n=>{
+      const c = document.createElement("span");
+      c.className = "chip";
+      c.textContent = n;
+      roster.appendChild(c);
+    });
+    finale.appendChild(h);
+    finale.appendChild(roster);
+  })();
+
+  function resetLetter(img){
+    img.style.transition = "none";
+    img.style.opacity = "0";
+    img._wob  = rand(-22, 22);        // sideways drift
+    img._tilt = rand(-7, 7);          // organic resting tilt (deg)
+    img.style.transform = `translate(${img._wob}px, 220%) rotate(${img._tilt}deg)`;
+  }
+
+  async function runName(el){
+    const letters = [...el.querySelectorAll("img")];
+
+    // prep hidden state
+    letters.forEach(resetLetter);
+    void el.offsetWidth;
+
+    // rise: random order, slow buoyant drift, settle with a slight tilt
+    letters.forEach(img=>{
+      const delay = rand(0, RISE_SPREAD);
+      img.style.transition = `opacity ${RISE_DUR*0.4}ms ease, transform ${RISE_DUR}ms ${RISE_EASE}`;
+      img.style.transitionDelay = delay + "ms";
+      img.style.opacity = "1";
+      img.style.transform = `translate(0px, 0px) rotate(${img._tilt*0.5}deg)`;
+    });
+    await sleep(RISE_SPREAD + RISE_DUR);
+
+    // name is fully formed -> glow ramps in, then hold + lazy bob
+    glow.classList.add("on");
+    el.classList.add("floating");
+    await sleep(HOLD);
+
+    // Fade away while the name KEEPS gently floating (don't stop the bob here,
+    // or it snaps to rest and stutters). glow fades out with the letters.
+    glow.classList.remove("on");
+    letters.forEach(img=>{
+      const delay = rand(0, FADE_SPREAD);
+      img.style.transition = `opacity ${FADE_DUR}ms ease, transform ${FADE_DUR}ms ease-in`;
+      img.style.transitionDelay = delay + "ms";
+      img.style.opacity = "0";
+      img.style.transform = `translate(${img._wob*0.5}px, -18%) scale(.96) rotate(${img._tilt}deg)`;
+    });
+    await sleep(FADE_SPREAD + FADE_DUR);
+
+    // now fully invisible -> safe to stop the bob (any reset snap is unseen)
+    el.classList.remove("floating");
+    void el.offsetWidth;
+  }
+
+  async function showFinale(){
+    finale.classList.add("on");
+    await sleep(FINALE_HOLD);
+    finale.classList.remove("on");
+    await sleep(1000);
+  }
+
+  async function loop(){
+    while(true){
+      const order = shuffle(names.map((_,i)=>i));   // fresh order each cycle
+      for(const idx of order){
+        await runName(els[idx]);
+        await sleep(GAP);
+      }
+      await showFinale();                            // whole-team payoff
+    }
+  }
+  loop();
+</script>
+</body>
+</html>
