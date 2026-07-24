@@ -293,7 +293,35 @@
       await showFinale();                            // whole-team payoff
     }
   }
-  loop();
+
+  // --- FIT NAMES TO SCREEN WIDTH ---------------------------------------
+  // Letters are sized by height, so a long name can be wider than a narrow
+  // phone screen and get clipped. Measure the widest name and shrink ALL
+  // names to one uniform height so even the longest fits (with a margin).
+  function fitNames(){
+    const avail = stage.clientWidth * 0.9;   // leave a little side margin
+    const full  = stage.clientHeight;
+    els.forEach(el => el.style.height = full + "px");   // reset to measure
+    let maxW = 0;
+    els.forEach(el => { if (el.scrollWidth > maxW) maxW = el.scrollWidth; });
+    const h = (maxW > avail) ? Math.floor(full * avail / maxW) : full;
+    els.forEach(el => el.style.height = h + "px");
+  }
+
+  // wait for the letter images to load so width measurements are accurate
+  const nameImgs = els.flatMap(el => [...el.querySelectorAll("img")]);
+  function whenLoaded(imgs){
+    return Promise.all(imgs.map(img =>
+      img.complete ? Promise.resolve()
+                   : new Promise(res => { img.onload = img.onerror = res; })));
+  }
+
+  (async function start(){
+    await whenLoaded(nameImgs);
+    fitNames();
+    window.addEventListener("resize", fitNames);
+    loop();
+  })();
 </script>
 </body>
 </html>
