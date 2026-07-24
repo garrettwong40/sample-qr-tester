@@ -10,15 +10,25 @@
 
   body{
     background: radial-gradient(circle at 50% 25%, #1c1c1c 0%, #050505 90%);
-    min-height:100vh;
+    min-height:100dvh;               /* dvh = true visible height on mobile */
+    display:flex;
+    flex-direction:column;
+    overflow-x:hidden;
+    overflow-y:auto;                 /* scroll instead of clip if too short */
+    position:relative;
+    font-family:system-ui,sans-serif;
+  }
+  /* Title + names grouped and centered together. margin:auto centers the
+     group when there's room, and lets it scroll from the top when not. */
+  .stagecard{
+    margin:auto;
+    width:100%;
     display:flex;
     flex-direction:column;
     align-items:center;
-    justify-content:space-between;   /* title near top, names near bottom */
-    overflow:hidden;
-    position:relative;
-    padding:9vh 24px 10vh;
-    font-family:system-ui,sans-serif;
+    justify-content:center;
+    gap: 5vh;
+    padding: 6vh 16px;
   }
 
   .word{ display:flex; align-items:flex-end; justify-content:center; }
@@ -41,9 +51,9 @@
     50%    { transform: translateY(-14px) rotate(.5deg); }
   }
 
-  /* ---------- RISING NAMES (anchored near bottom) ---------- */
+  /* ---------- RISING NAMES ---------- */
   .stage{
-    height: clamp(90px, 20vh, 150px);
+    height: clamp(90px, 18dvh, 150px);
     width:100%;
     display:flex; align-items:flex-end; justify-content:center;
     position:relative;
@@ -95,8 +105,9 @@
 
   /* ---------- FINALE "WHOLE TEAM" FRAME ---------- */
   .finale{
-    position:absolute;
+    position:fixed;
     inset:0;
+    z-index:10;
     display:flex;
     flex-direction:column;
     align-items:center;
@@ -142,16 +153,18 @@
 </head>
 <body>
 
-  <!-- Title -->
-  <div class="title">
-    <div class="word" id="w1"></div>
-    <div class="word" id="w2"></div>
-  </div>
+  <div class="stagecard">
+    <!-- Title -->
+    <div class="title">
+      <div class="word" id="w1"></div>
+      <div class="word" id="w2"></div>
+    </div>
 
-  <!-- Rising names -->
-  <div class="stage" id="stage">
-    <div class="glow" id="glow"></div>
-    <div class="finale" id="finale"></div>
+    <!-- Rising names -->
+    <div class="stage" id="stage">
+      <div class="glow" id="glow"></div>
+      <div class="finale" id="finale"></div>
+    </div>
   </div>
 
 <script>
