@@ -114,14 +114,15 @@
     transition: opacity 1s ease;
   }
   .rosterSplash.hide{ opacity:0; pointer-events:none; }
-  .rosterSplash .rhead{
-    font-family:"Baloo 2","Nunito",system-ui,sans-serif;
-    font-weight:800; letter-spacing:.06em;
-    font-size: clamp(20px, 5.5vw, 40px);
-    color:#ff9ecb;
-    text-shadow:0 0 16px rgba(255,120,190,.5), 0 4px 10px rgba(0,0,0,.5);
-    text-align:center;
+  /* balloon-letter logo on the roster splash (mirrors the main .title) */
+  .rlogo{
+    display:flex; flex-direction:column; align-items:center;
+    gap: 0.8vh;
+    animation: floaty 4.5s ease-in-out infinite;
+    filter: drop-shadow(0 12px 16px rgba(0,0,0,.55));
   }
+  .rlogo .word{ height: clamp(38px, 9vw, 78px); }
+  .rlogo .word img{ margin: 0 -0.6vw; display:block; height:100%; width:auto; }
   .rgrid{
     display:grid;
     grid-template-columns: 1fr 1fr;      /* two columns */
@@ -219,7 +220,11 @@
 
   <!-- Roster splash: shown on every load, then fades into the cycling show -->
   <div class="rosterSplash" id="rosterSplash">
-    <div class="rhead">AMPS Science</div>
+    <!-- balloon-letter logo, same as the main title -->
+    <div class="rlogo" id="rlogo">
+      <div class="word" id="rw1"></div>
+      <div class="word" id="rw2"></div>
+    </div>
     <div class="rgrid paused" id="rgrid"></div>
   </div>
 
@@ -396,11 +401,15 @@
   const rgrid = document.getElementById("rgrid");
   // roster must stay up long enough for the last name to finish rising:
   // last name starts ~ 20*0.35s=7s, + 1.4s spread + 3.2s rise ≈ 11.6s, then linger
-  const SPLASH_HOLD = 13500;  // ms the roster stays before fading into the show
+  const SPLASH_HOLD = 27000;  // ms the roster stays before fading into the show
 
   const ROW_STAGGER  = 0.35;   // s between successive names starting to rise
   const LETTER_SPREAD= 1.4;    // s window over which a name's letters rise (RANDOM within)
   const RISE_LEN     = 3.2;    // s for a letter's rise (matches CSS)
+
+  // balloon-letter logo on the splash
+  document.getElementById("rw1").appendChild(buildWord("AMPS"));
+  document.getElementById("rw2").appendChild(buildWord("SCIENCE"));
 
   (function buildRoster(){
     // Names begin in reading order, but WITHIN each name the letters rise in
@@ -428,9 +437,11 @@
   function fitRoster(){
     const rows = Math.ceil(names.length/2);
     const vh = window.innerHeight;
-    // budget: leave room for heading (~9%) + paddings; divide rest among rows
-    const perRow = (vh*0.80) / rows;
-    let h = Math.max(20, Math.floor(perRow*0.78));   // name height per row
+    // subtract the balloon logo's actual height, then divide the rest by rows
+    const logoH = document.getElementById("rlogo").offsetHeight || vh*0.14;
+    const avail = vh - logoH - vh*0.10;              // logo + paddings
+    const perRow = avail / rows;
+    let h = Math.max(18, Math.floor(perRow*0.80));   // name height per row
     // width guard: measure widest name at this height, shrink if needed
     const colW = Math.min(560, rgrid.clientWidth)/2 - 12;
     const rnames=[...rgrid.querySelectorAll(".rname")];
@@ -451,8 +462,8 @@
   }
 
   (async function start(){
-    // roster uses the same images; wait (capped) then size it
-    await whenLoadedSafe([...rgrid.querySelectorAll("img")]);
+    // roster + logo use the same letter images; wait (capped) then size it
+    await whenLoadedSafe([...rosterSplash.querySelectorAll("img")]);
     fitRoster();
     window.addEventListener("resize", fitRoster);
     // release the paused rise animations now that images are ready, so the
