@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>AMPS Science — AR</title>
+<style>
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; overflow:hidden; background:#000; }
+  body{ font-family:system-ui,sans-serif; color:#fff; }
+
+  /* Live camera feed sits behind the transparent WebGL canvas (magic-window mode) */
+  #cam{
+    position:fixed; inset:0; width:100%; height:100%;
+    object-fit:cover; z-index:0; background:#000; display:none;
+  }
+  #gl{ position:fixed; inset:0; z-index:1; }
+
+  /* Start / status overlay (also used as WebXR dom-overlay) */
+  #ui{
+    position:fixed; inset:0; z-index:2;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:22px; padding:28px;
+    background: radial-gradient(circle at 50% 30%, #1c1c1c 0%, #050505 92%);
+    text-align:center; transition:opacity .6s ease;
+  }
+  #ui.hide{ opacity:0; pointer-events:none; }
+  #ui h1{
+    font-size: clamp(28px, 8vw, 52px); font-weight:800; letter-spacing:.03em;
+    color:#ff9ecb; text-shadow:0 0 18px rgba(255,120,190,.55);
+  }
+  #ui p{ max-width:420px; line-height:1.5; color:#dcdcdc; font-size:15px; }
+  .btn{
+    appearance:none; border:0; cursor:pointer;
+    font-size:18px; font-weight:800; letter-spacing:.02em;
+    padding:16px 30px; border-radius:999px; color:#3a0a22;
+    background:linear-gradient(178deg,#ff9ecb 0%,#f25c9c 100%);
+    box-shadow:0 10px 24px rgba(242,92,156,.35);
+  }
+  .btn.secondary{
+    background:transparent; color:#ff9ecb;
+    border:2px solid rgba(255,158,203,.6); box-shadow:none; font-size:15px; padding:12px 22px;
+  }
+  #status{ font-size:13px; color:#9a9a9a; min-height:18px; }
+  /* Small "exit" button shown while an AR view is running */
+  #exit{
+    position:fixed; top:calc(14px + env(safe-area-inset-top)); right:14px; z-index:3;
+    display:none; padding:10px 16px; border-radius:999px; border:0; cursor:pointer;
+    font-weight:800; color:#fff; background:rgba(0,0,0,.5); backdrop-filter:blur(6px);
+  }
+  #exit.show{ display:block; }
+</style>
+</head>
+<body>
+  <video id="cam" playsinline muted autoplay></video>
+  <canvas id="gl"></canvas>
+
+  <div id="ui">
+    <h1>AMPS Science ♡</h1>
+    <p id="lede">Point your phone around and the team's balloon names will float in the space in front of you.</p>
+    <button class="btn" id="startBtn">Start AR</button>
+    <button class="btn secondary" id="flatBtn">Just watch it (no camera)</button>
+    <div id="status"></div>
+  </div>
+  <button id="exit">✕ Exit</button>
+
+<!-- three.js (global build, non-module) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  const DIR = "letters/";
+  const names = [
+    "alexijia","amdhanda","achanish","boopalb","bverkhov","nevina",
+    "elcimren","gcwong","jmanas","kriswpan","kynovak","meisamhe",
+    "mozadeh","rninad","pstudans","rpothen","rzmiao","devadula",
+    "saniaki","ssamaga","khatrivi"
+  ];
+
+  // ---------- tiny helpers ----------
+  const $ = id => document.getElementById(id);
+  const rand = (a,b)=> a + Math.random()*(b-a);
+  const setStatus = t => { $("status").textContent = t; };
+
+  // ---------- DOM refs ----------
+  const ui = $("ui"), camVideo = $("cam"), exitBtn = $("exit");
+
+  // ---------- three.js core ----------
+  const renderer = new THREE.WebGLRenderer({ canvas: $("gl"), alpha:true, antialias:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x000000, 0); // transparent so the camera feed shows through
+
+  const scene  = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 50);
+
+  // A "rig" we rotate with the gyroscope in magic-window mode. In WebXR mode the
+  // headset/phone pose drives the camera directly and the rig stays at identity.
+  const rig = new THREE.Object3D();
+  rig.add(camera);
+  scene.add(rig);
+
+  // Everything the user sees floats inside this group, ~2m in front of them.
+  const world = new THREE.Group();
+  world.position.set(0, 0, -2.2);
+  scene.add(world);
+
+  window.addEventListener("resize", ()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ---------- texture preloading ----------
+  const loader = new THREE.TextureLoader();
+  const texCache = new Map(); // char -> {tex, aspect}
+  function loadChar(ch){
+    if(texCache.has(ch)) return Promise.resolve(texCache.get(ch));
+    return new Promise(res=>{
+      loader.load(DIR + ch + ".png",
+        tex=>{
+          tex.colorSpace = THREE.SRGBColorSpace || tex.colorSpace;
+          const img = tex.image;
+          const aspect = (img && img.width && img.height) ? img.width/img.height : 0.7;
+          const rec = { tex, aspect };
+          texCache.set(ch, rec); res(rec);
+        },
+        undefined,
+        ()=>{ const rec={tex:null, aspect:0.7}; texCache.set(ch,rec); res(rec); } // never hang
+      );
+    });
+  }
+
+  // ---------- balloon-letter word builder ----------
+  // Returns a THREE.Group of textured planes laid out horizontally and centered.
+  function buildWord(text, height){
+    const group = new THREE.Group();
+    const overlap = 0.90;            // letters slightly overlap, like the 2D version
+    const chars = [...text.toUpperCase()].filter(c => c !== " ");
+    let x = 0;
+    const placed = [];
+    for(const ch of chars){
+      const rec = texCache.get(ch);
+      if(!rec || !rec.tex) continue;
+      const w = height * rec.aspect;
+      const geo = new THREE.PlaneGeometry(w, height);
+      const mat = new THREE.MeshBasicMaterial({ map: rec.tex, transparent:true, depthWrite:false });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.x = x + w/2;
+      mesh.userData.phase = rand(0, Math.PI*2);   // per-letter bob offset
+      mesh.userData.baseY = 0;
+      group.add(mesh);
+      placed.push(mesh);
+      x += w * overlap;
+    }
+    // center the whole word on x=0
+    const total = x;
+    placed.forEach(m => m.position.x -= total/2);
+    group.userData.letters = placed;
+    return group;
+  }
+
+  // ---------- scene content: title + one cycling name ----------
+  const title = new THREE.Group();          // "AMPS" over "SCIENCE"
+  const stage = new THREE.Group();          // where names rise & fade
+  world.add(title, stage);
+
+  let currentName = null;
+
+  async function buildStaticContent(){
+    // preload every glyph we need up front
+    const need = new Set();
+    "AMPSSCIENCE".split("").forEach(c=>need.add(c));
+    names.forEach(n => n.toUpperCase().split("").forEach(c=>need.add(c)));
+    await Promise.all([...need].map(loadChar));
+
+    const amps = buildWord("AMPS", 0.34);
+    const sci  = buildWord("SCIENCE", 0.26);
+    amps.position.y = 0.95;
+    sci.position.y  = 0.60;
+    title.add(amps, sci);
+    title.userData.words = [amps, sci];
+  }
+
+  function showName(text){
+    // clear previous
+    while(stage.children.length) stage.remove(stage.children[0]);
+    const w = buildWord(text, 0.30);
+    w.position.y = 0.0;
+    // start hidden/low, letters will rise & fade in over time
+    w.userData.letters.forEach(m=>{
+      m.material.opacity = 0;
+      m.userData.riseDelay = rand(0, 900);      // ms
+      m.userData.startY = -0.7;
+    });
+    w.userData.born = performance.now();
+    stage.add(w);
+    currentName = w;
+  }
+
+  // simple cycle timing (ms)
+  const RISE = 2600, HOLD = 2400, FADE = 1400, GAP = 400;
+  let order = [], oi = 0, phaseTime = 0, phase = "rise";
+  function reshuffle(){
+    order = names.map((_,i)=>i);
+    for(let i=order.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
+    oi = 0;
+  }
+
+  function tickCycle(now, dt){
+    if(!currentName){ reshuffle(); showName(names[order[oi]]); phase="rise"; phaseTime=0; return; }
+    phaseTime += dt;
+    const letters = currentName.userData.letters;
+    const elapsed = now - currentName.userData.born;
+
+    if(phase === "rise"){
+      letters.forEach(m=>{
+        const t = Math.min(1, Math.max(0, (elapsed - m.userData.riseDelay)/RISE));
+        const e = 1 - Math.pow(1-t, 3); // easeOutCubic
+        m.material.opacity = e;
+        m.position.y = m.userData.startY + (0 - m.userData.startY)*e;
+      });
+      if(phaseTime > RISE + 900){ phase="hold"; phaseTime=0; }
+    } else if(phase === "hold"){
+      letters.forEach(m=> m.material.opacity = 1);
+      if(phaseTime > HOLD){ phase="fade"; phaseTime=0; }
+    } else if(phase === "fade"){
+      const t = Math.min(1, phaseTime/FADE);
+      letters.forEach(m=>{ m.material.opacity = 1 - t; m.position.y = -0.25*t; });
+      if(phaseTime > FADE + GAP){
+        oi++;
+        if(oi >= order.length) reshuffle();
+        showName(names[order[oi]]);
+        phase="rise"; phaseTime=0;
+      }
+    }
+  }
+
+  // ---------- per-frame float animation ----------
+  function floatLetters(group, now){
+    const ls = group.userData.letters; if(!ls) return;
+    ls.forEach(m=>{
+      m.position.y = (m.position.y) + Math.sin(now/900 + m.userData.phase)*0.0009;
+      m.rotation.z = Math.sin(now/1100 + m.userData.phase)*0.05;
+    });
+  }
+
+  let last = performance.now();
+  function animate(now){
+    const dt = now - last; last = now;
+    // gentle whole-group bob
+    world.position.y = Math.sin(now/1600)*0.05;
+    (title.userData.words||[]).forEach(w=> floatLetters(w, now));
+    tickCycle(now, dt);
+    renderer.render(scene, camera);
+  }
+
+  // ================= MODE 1: WebXR immersive AR =================
+  async function startXR(){
+    try{
+      const session = await navigator.xr.requestSession("immersive-ar", {
+        optionalFeatures:["dom-overlay","local-floor"],
+        domOverlay:{ root: ui }
+      });
+      renderer.xr.enabled = true;
+      await renderer.xr.setSession(session);
+      // In XR, the device pose drives the camera; keep our rig neutral.
+      rig.quaternion.identity();
+      world.position.set(0, 1.3, -2.2); // eye-ish height, 2.2m ahead
+      ui.classList.add("hide"); exitBtn.classList.add("show");
+      setStatus("");
+      session.addEventListener("end", ()=>{
+        renderer.xr.enabled = false;
+        renderer.setAnimationLoop(null);
+        exitBtn.classList.remove("show"); ui.classList.remove("hide");
+        startMagicOrFlatLoop.stopped = true;
+      });
+      renderer.setAnimationLoop(animate);
+    }catch(err){
+      setStatus("Couldn't start immersive AR — falling back to camera view.");
+      startMagicWindow();
+    }
+  }
+
+  // ================= MODE 2: magic window (camera + gyro) =================
+  let deviceQuat = new THREE.Quaternion();
+  const zee = new THREE.Vector3(0,0,1);
+  const q0  = new THREE.Quaternion();
+  const euler = new THREE.Euler();
+  // -90° around X maps device space to three.js world "look forward"
+  const screenTransform = new THREE.Quaternion(-Math.sqrt(0.5),0,0,Math.sqrt(0.5));
+  function onOrientation(e){
+    if(e.alpha == null) return;
+    const a = THREE.MathUtils.degToRad(e.alpha);
+    const b = THREE.MathUtils.degToRad(e.beta);
+    const g = THREE.MathUtils.degToRad(e.gamma);
+    const orient = THREE.MathUtils.degToRad(window.orientation || 0);
+    euler.set(b, a, -g, "YXZ");
+    deviceQuat.setFromEuler(euler);
+    deviceQuat.multiply(screenTransform);
+    deviceQuat.multiply(q0.setFromAxisAngle(zee, -orient));
+  }
+
+  async function enableOrientation(){
+    // iOS 13+ needs an explicit permission request from a user gesture
+    try{
+      if(typeof DeviceOrientationEvent !== "undefined" &&
+         typeof DeviceOrientationEvent.requestPermission === "function"){
+        const res = await DeviceOrientationEvent.requestPermission();
+        if(res === "granted") window.addEventListener("deviceorientation", onOrientation, true);
+      }else{
+        window.addEventListener("deviceorientation", onOrientation, true);
+      }
+    }catch(_){ /* no gyro — content just stays centered */ }
+  }
+
+  async function startCamera(){
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode:{ ideal:"environment" } }, audio:false
+      });
+      camVideo.srcObject = stream;
+      camVideo.style.display = "block";
+      await camVideo.play().catch(()=>{});
+      return true;
+    }catch(err){
+      setStatus("Camera unavailable — showing it on a black background instead.");
+      return false;
+    }
+  }
+
+  const startMagicOrFlatLoop = { stopped:false };
+  function loopMagic(now){
+    if(startMagicOrFlatLoop.stopped) return;
+    rig.quaternion.slerp(deviceQuat, 0.25); // smooth follow of the phone's pose
+    animate(now);
+    requestAnimationFrame(loopMagic);
+  }
+
+  async function startMagicWindow(){
+    world.position.set(0, 0, -2.2);
+    await startCamera();
+    await enableOrientation();
+    ui.classList.add("hide"); exitBtn.classList.add("show");
+    startMagicOrFlatLoop.stopped = false;
+    requestAnimationFrame(loopMagic);
+  }
+
+  // ================= MODE 3: flat "just watch" (no camera) =================
+  function startFlat(){
+    renderer.setClearColor(0x050505, 1);
+    world.position.set(0, 0, -2.2);
+    ui.classList.add("hide"); exitBtn.classList.add("show");
+    startMagicOrFlatLoop.stopped = false;
+    (function loopFlat(now){
+      if(startMagicOrFlatLoop.stopped) return;
+      rig.quaternion.identity();
+      animate(now);
+      requestAnimationFrame(loopFlat);
+    })(performance.now());
+  }
+
+  function exitToMenu(){
+    startMagicOrFlatLoop.stopped = true;
+    if(renderer.xr.isPresenting){ renderer.xr.getSession()?.end(); }
+    if(camVideo.srcObject){ camVideo.srcObject.getTracks().forEach(t=>t.stop()); camVideo.srcObject=null; }
+    camVideo.style.display="none";
+    renderer.setClearColor(0x000000, 0);
+    exitBtn.classList.remove("show"); ui.classList.remove("hide");
+    setStatus("");
+  }
+
+  // ---------- wire up buttons + feature detection ----------
+  let xrSupported = false;
+  (async function init(){
+    setStatus("Loading balloon letters…");
+    await buildStaticContent();
+    showName(names[0]); reshuffle();
+    setStatus("");
+    if(navigator.xr && navigator.xr.isSessionSupported){
+      try{ xrSupported = await navigator.xr.isSessionSupported("immersive-ar"); }catch(_){ }
+    }
+    $("lede").textContent = xrSupported
+      ? "Your phone supports full AR. Tap Start AR to place the team's floating balloon names right in your room."
+      : "Point your phone around and the team's balloon names will float in the space in front of you.";
+    $("startBtn").textContent = xrSupported ? "Start AR (immersive)" : "Start AR view";
+  })();
+
+  $("startBtn").addEventListener("click", ()=>{
+    if(xrSupported) startXR();
+    else startMagicWindow();
+  });
+  $("flatBtn").addEventListener("click", startFlat);
+  exitBtn.addEventListener("click", exitToMenu);
+})();
+</script>
+</body>
+</html>
