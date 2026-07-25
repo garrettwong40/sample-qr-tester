@@ -484,6 +484,31 @@
     ctx.restore();
   }
 
+  // Draw the "99% Science 1% Magic" logo along the bottom of a captured photo.
+  function drawWatermark(ctx, W, H){
+    const size = Math.round(H * 0.032);           // scales with photo resolution
+    const y = H - Math.round(H * 0.045);
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = `800 ${size}px "Baloo 2","Nunito",system-ui,sans-serif`;
+    // soft dark backing so it stays legible over any camera background
+    ctx.shadowColor = "rgba(0,0,0,.65)";
+    ctx.shadowBlur = size * 0.5;
+    ctx.shadowOffsetY = size * 0.08;
+    // build the two-tone line and center it as a whole
+    const partA = "99% Science ", partB = "1% Magic";
+    const wA = ctx.measureText(partA).width;
+    const wB = ctx.measureText(partB).width;
+    const startX = W/2 - (wA + wB)/2;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#ffffff";                     // "99% Science " in white
+    ctx.fillText(partA, startX, y);
+    ctx.fillStyle = "#ff9ecb";                     // "1% Magic" in the theme pink
+    ctx.fillText(partB, startX + wA, y);
+    ctx.restore();
+  }
+
   async function takePhoto(){
     // force a fresh render so the WebGL buffer holds the current frame
     renderer.render(scene, camera);
@@ -499,6 +524,8 @@
     }
     // 2) the 3D balloon letters on top
     ctx.drawImage(renderer.domElement, 0, 0, W, H);
+    // 3) the team logo watermark along the bottom
+    drawWatermark(ctx, W, H);
 
     // shutter flash
     flash.classList.remove("fire"); void flash.offsetWidth; flash.classList.add("fire");
