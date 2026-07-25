@@ -34,137 +34,112 @@
     height:100%;
     filter: drop-shadow(0 14px 16px rgba(0,0,0,.5));
   }
+  /* Each letter runs the SAME pure-CSS keyframe on an infinite loop.
+     A per-letter animation-delay (set inline by JS) staggers them into a
+     wave. Pure CSS = it can never "stall" like JS orchestration could. */
   .name img{
     display:block; height:100%; width:auto; margin:0 -0.5vw;
-    transform-origin:center 60%;
+    transform-origin:center 55%;
     will-change: transform, opacity;
-    /* NOTE: visible by default. JS hides them only once it's ready to
-       animate, so if the script ever stalls the name still shows. */
+    animation: pop var(--cycle) ease-in-out infinite;
   }
-  .bit{
+
+  @keyframes pop{
+    0%   { opacity:0; transform: translateY(150%) scale(.85); }   /* below, hidden */
+    14%  { opacity:1; transform: translateY(0)    scale(1); }     /* risen */
+    50%  { opacity:1; transform: translateY(-6px) scale(1); }     /* gentle float */
+    60%  { opacity:1; transform: translateY(0)    scale(1.26); }  /* inflate! */
+    66%  { opacity:0; transform: translateY(0)    scale(.15) rotate(12deg); } /* POP */
+    100% { opacity:0; transform: translateY(150%) scale(.85); }   /* stay gone, reset */
+  }
+
+  /* sparkle particles injected at each pop (JS), pure-CSS animated */
+  .spark{
     position:absolute; border-radius:50%;
     background: radial-gradient(circle at 35% 30%, #ffd6ea, #ff9ecb 55%, #f25c9c 100%);
-    pointer-events:none; will-change: transform, opacity;
+    pointer-events:none;
+    animation: fly .8s ease-out forwards;
   }
+  @keyframes fly{
+    0%{ transform: translate(0,0) scale(1); opacity:1; }
+    100%{ transform: translate(var(--dx),var(--dy)) scale(.2); opacity:0; }
+  }
+
   .tag{
     margin-top:5vh; text-align:center;
     color:#ffd6ea; font-weight:800;
     font-size:clamp(14px,3.6vw,22px);
-    opacity:0; transition: opacity .8s ease;
+    opacity:.95;
     text-shadow:0 0 14px rgba(255,120,190,.45);
   }
-  .tag.show{ opacity:.95; }
 </style>
 </head>
 <body>
   <div class="kicker">AMPS Science</div>
   <div class="stage"><div class="name" id="name"></div></div>
-  <div class="tag" id="tag">🎈 gcwong 🎈</div>
+  <div class="tag">🎈 gcwong 🎈</div>
 
 <script>
-  const NAME = "gcwong";
-  const DIR  = "../../letters/";
+  const NAME  = "gcwong";
+  const DIR   = "../../letters/";
+  const CYCLE = 6;                 // seconds per full rise->pop->reset loop
+  const STAGGER = 0.28;            // seconds between letters (the wave)
 
-  const stage  = document.getElementById("stage");
   const nameEl = document.getElementById("name");
-  const tag    = document.getElementById("tag");
 
-  const rand  = (a,b)=>a+Math.random()*(b-a);
-  const sleep = ms=>new Promise(r=>setTimeout(r,ms));
-
-  // build letters
-  const imgs = [...NAME.toUpperCase()].map(ch=>{
+  // build letters; each gets the shared keyframe + a staggered NEGATIVE delay
+  // so the wave is already in motion on load (no dead time at start).
+  const letters = [...NAME.toUpperCase()];
+  const imgs = letters.map((ch,i)=>{
     const im=document.createElement("img");
     im.src=DIR+ch+".png"; im.alt=ch;
+    im.style.setProperty("--cycle", CYCLE+"s");
+    im.style.animationDelay = (i*STAGGER)+"s";
     nameEl.appendChild(im);
     return im;
   });
 
+  // sparkle burst when a letter hits its pop moment
+  function spark(im){
+    const r=im.getBoundingClientRect();
+    if(!r.width) return;
+    const cx=r.left+r.width/2, cy=r.top+r.height/2, size=r.height;
+    for(let k=0;k<12;k++){
+      const s=document.createElement("div"); s.className="spark";
+      const d=size*(0.14+Math.random()*0.22);
+      s.style.width=s.style.height=d+"px";
+      s.style.left=(cx-d/2)+"px"; s.style.top=(cy-d/2)+"px";
+      const ang=Math.random()*Math.PI*2, dist=size*(0.5+Math.random()*0.9);
+      s.style.setProperty("--dx",(Math.cos(ang)*dist)+"px");
+      s.style.setProperty("--dy",(Math.sin(ang)*dist - size*0.2)+"px");
+      document.body.appendChild(s);
+      setTimeout(()=>s.remove(),850);
+    }
+  }
+
+  // Fire sparks in sync with each letter's pop (~66% of the cycle).
+  // This is decorative only — if it ever fails, the CSS pop still runs.
+  const popMoment = CYCLE*0.66*1000;
+  imgs.forEach((im,i)=>{
+    const t0 = popMoment + i*STAGGER*1000;
+    // repeat every cycle
+    setTimeout(function tick(){
+      spark(im);
+      setTimeout(tick, CYCLE*1000);
+    }, t0);
+  });
+
+  // keep letters sized to fit width
   function fit(){
-    const avail=stage.clientWidth*0.9, full=stage.clientHeight;
+    const stage=nameEl.parentElement;
+    const avail=stage.clientWidth*0.92, full=stage.clientHeight;
     nameEl.style.height=full+"px";
     const w=nameEl.scrollWidth;
     nameEl.style.height=(w>avail?Math.floor(full*avail/w):full)+"px";
   }
-
-  function burst(cx,cy,size){
-    for(let i=0;i<14;i++){
-      const b=document.createElement("div"); b.className="bit";
-      const d=rand(size*0.18,size*0.42);
-      b.style.width=b.style.height=d+"px";
-      b.style.left=(cx-d/2)+"px"; b.style.top=(cy-d/2)+"px";
-      document.body.appendChild(b);
-      const ang=rand(0,Math.PI*2), dist=rand(size*0.5,size*1.3);
-      const dx=Math.cos(ang)*dist, dy=Math.sin(ang)*dist-size*0.3;
-      b.animate(
-        [{transform:"translate(0,0) scale(1)",opacity:1},
-         {transform:`translate(${dx}px,${dy}px) scale(.2)`,opacity:0}],
-        {duration:rand(600,950),easing:"cubic-bezier(.2,.7,.3,1)",fill:"forwards"});
-      setTimeout(()=>b.remove(),1000);
-    }
-  }
-
-  async function popLetter(im){
-    const r=im.getBoundingClientRect();
-    im.style.transition="transform .18s ease-out";
-    im.style.transform="scale(1.28)";
-    await sleep(160);
-    burst(r.left+r.width/2, r.top+r.height/2, r.height);
-    im.style.transition="transform .12s ease-in, opacity .12s ease-in";
-    im.style.transform="scale(.2) rotate("+rand(-20,20)+"deg)";
-    im.style.opacity="0";
-    await sleep(130);
-  }
-
-  async function play(){
-    // reset -> hidden below
-    imgs.forEach(im=>{ im.style.transition="none"; im.style.opacity="0"; im.style.transform="translateY(140%)"; });
-    tag.classList.remove("show");
-    void nameEl.offsetWidth;
-
-    // rise in
-    imgs.forEach((im,i)=>{
-      im.style.transition="opacity 900ms ease, transform 1600ms cubic-bezier(.33,.15,.5,1)";
-      im.style.transitionDelay=(i*130)+"ms";
-      im.style.opacity="1"; im.style.transform="translateY(0)";
-    });
-    await sleep(imgs.length*130+1700);
-    await sleep(900);
-
-    // pop each
-    for(const im of imgs){ await popLetter(im); await sleep(120); }
-
-    tag.classList.add("show");
-    await sleep(2600);
-    tag.classList.remove("show");
-    await sleep(700);
-    play();
-  }
-
-  // Preload images but NEVER hang: race each against a 2.5s timeout.
-  function whenLoadedSafe(list, cap=2500){
-    return Promise.all(list.map(im=>{
-      if(im.complete) return Promise.resolve();
-      return Promise.race([
-        new Promise(res=>{ im.onload=im.onerror=res; }),
-        sleep(cap)
-      ]);
-    }));
-  }
-
-  (async function(){
-    try{
-      await whenLoadedSafe(imgs);
-      fit();
-      window.addEventListener("resize", fit);
-      await sleep(300);
-      play();
-    }catch(e){
-      // last-resort: if anything throws, at least show the name statically
-      fit();
-      imgs.forEach(im=>{ im.style.opacity="1"; im.style.transform="translateY(0)"; });
-    }
-  })();
+  window.addEventListener("resize", fit);
+  window.addEventListener("load", fit);
+  fit();
 </script>
 </body>
 </html>
