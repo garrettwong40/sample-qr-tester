@@ -58,6 +58,69 @@
   #flip.show{ display:block; }
   /* mirror the feed when using the front (selfie) camera, like a mirror */
   #cam.mirror{ transform:scaleX(-1); }
+
+  /* Bottom control bar (photo + names), shown while a camera/flat view runs */
+  #controls{
+    position:fixed; left:0; right:0; z-index:3;
+    bottom:calc(18px + env(safe-area-inset-bottom));
+    display:none; justify-content:center; gap:14px; padding:0 16px;
+  }
+  #controls.show{ display:flex; }
+  .ctl{
+    appearance:none; border:0; cursor:pointer;
+    font-weight:800; font-size:15px; color:#fff;
+    padding:14px 20px; border-radius:999px;
+    background:rgba(0,0,0,.5); backdrop-filter:blur(6px);
+  }
+  .ctl.primary{
+    color:#3a0a22; background:linear-gradient(178deg,#ff9ecb 0%,#f25c9c 100%);
+    box-shadow:0 8px 20px rgba(242,92,156,.4);
+  }
+
+  /* Slide-up alias panel */
+  #namePanel{
+    position:fixed; left:0; right:0; bottom:0; z-index:4;
+    max-height:60vh; padding:18px 16px calc(22px + env(safe-area-inset-bottom));
+    background:rgba(10,10,12,.92); backdrop-filter:blur(10px);
+    border-top-left-radius:22px; border-top-right-radius:22px;
+    box-shadow:0 -12px 40px rgba(0,0,0,.6);
+    transform:translateY(110%); transition:transform .3s ease;
+    overflow-y:auto;
+  }
+  #namePanel.open{ transform:translateY(0); }
+  #namePanel h3{ text-align:center; color:#ff9ecb; font-size:16px; margin-bottom:12px; font-weight:800; }
+  .namegrid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(120px,1fr)); gap:10px; }
+  .aliasBtn{
+    appearance:none; border:1px solid rgba(255,158,203,.35); cursor:pointer;
+    padding:12px 8px; border-radius:14px; font-weight:800; font-size:14px;
+    color:#ffd6ea; background:rgba(242,92,156,.12);
+  }
+  .aliasBtn.active{ background:linear-gradient(178deg,#ff9ecb 0%,#f25c9c 100%); color:#3a0a22; border-color:transparent; }
+  #cycleBtn{
+    grid-column:1 / -1; padding:14px; border-radius:14px; border:0; cursor:pointer;
+    font-weight:800; font-size:15px; color:#3a0a22; margin-bottom:4px;
+    background:linear-gradient(178deg,#ffe08a 0%,#f5b301 100%);
+  }
+  #panelClose{
+    position:absolute; top:10px; right:14px; border:0; cursor:pointer;
+    background:transparent; color:#bbb; font-size:22px; font-weight:800; line-height:1;
+  }
+
+  /* Photo preview overlay */
+  #photoView{
+    position:fixed; inset:0; z-index:5; display:none;
+    flex-direction:column; align-items:center; justify-content:center; gap:16px;
+    background:rgba(0,0,0,.92); padding:24px;
+  }
+  #photoView.show{ display:flex; }
+  #photoView img{ max-width:92%; max-height:66vh; border-radius:14px; box-shadow:0 12px 40px rgba(0,0,0,.6); }
+  #photoView .hint{ color:#bbb; font-size:13px; text-align:center; }
+  #photoView .row{ display:flex; gap:14px; }
+
+  /* white flash on shutter */
+  #flash{ position:fixed; inset:0; z-index:6; background:#fff; opacity:0; pointer-events:none; }
+  #flash.fire{ animation:flash .35s ease-out; }
+  @keyframes flash{ 0%{opacity:.9;} 100%{opacity:0;} }
 </style>
 </head>
 <body>
@@ -73,6 +136,33 @@
   </div>
   <button id="exit">✕ Exit</button>
   <button id="flip">🔄 Flip camera</button>
+
+  <!-- bottom controls: take photo + open alias panel -->
+  <div id="controls">
+    <button class="ctl" id="namesBtn">👤 Names</button>
+    <button class="ctl primary" id="shotBtn">📸 Photo</button>
+  </div>
+
+  <!-- slide-up alias picker -->
+  <div id="namePanel">
+    <button id="panelClose">✕</button>
+    <h3>Pick a name to keep it floating</h3>
+    <div class="namegrid" id="namegrid">
+      <button id="cycleBtn">↻ Cycle everyone</button>
+    </div>
+  </div>
+
+  <!-- photo preview -->
+  <div id="photoView">
+    <img id="photoImg" alt="Your AR photo" />
+    <div class="row">
+      <button class="btn" id="photoShare">Share / Save</button>
+      <button class="btn secondary" id="photoClose">Back</button>
+    </div>
+    <div class="hint" id="photoHint"></div>
+  </div>
+
+  <div id="flash"></div>
 
 <!-- three.js (global build, non-module) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -95,9 +185,11 @@
 
   // ---------- DOM refs ----------
   const ui = $("ui"), camVideo = $("cam"), exitBtn = $("exit"), flipBtn = $("flip");
+  const controls = $("controls"), namePanel = $("namePanel"), namegrid = $("namegrid");
+  const photoView = $("photoView"), photoImg = $("photoImg"), flash = $("flash");
 
   // ---------- three.js core ----------
-  const renderer = new THREE.WebGLRenderer({ canvas: $("gl"), alpha:true, antialias:true });
+  const renderer = new THREE.WebGLRenderer({ canvas: $("gl"), alpha:true, antialias:true, preserveDrawingBuffer:true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(0x000000, 0); // transparent so the camera feed shows through
@@ -212,14 +304,34 @@
   // simple cycle timing (ms)
   const RISE = 2600, HOLD = 2400, FADE = 1400, GAP = 400;
   let order = [], oi = 0, phaseTime = 0, phase = "rise";
+  let mode = "cycle";          // "cycle" = rotate through everyone | "pinned" = one name stays
+  let pinnedText = null;
   function reshuffle(){
     order = names.map((_,i)=>i);
     for(let i=order.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
     oi = 0;
   }
 
+  // Pin a single alias so it rises once and then stays forever (no fade).
+  function pinName(text){
+    mode = "pinned"; pinnedText = text;
+    showName(text);
+    phase = "rise"; phaseTime = 0;
+  }
+  // Resume rotating through everyone.
+  function cycleAll(){
+    mode = "cycle"; pinnedText = null;
+    reshuffle();
+    showName(names[order[oi]]);
+    phase = "rise"; phaseTime = 0;
+  }
+
   function tickCycle(now, dt){
-    if(!currentName){ reshuffle(); showName(names[order[oi]]); phase="rise"; phaseTime=0; return; }
+    if(!currentName){
+      if(mode === "pinned" && pinnedText){ pinName(pinnedText); }
+      else { reshuffle(); showName(names[order[oi]]); phase="rise"; phaseTime=0; }
+      return;
+    }
     phaseTime += dt;
     const letters = currentName.userData.letters;
     const elapsed = now - currentName.userData.born;
@@ -234,7 +346,8 @@
       if(phaseTime > RISE + 900){ phase="hold"; phaseTime=0; }
     } else if(phase === "hold"){
       letters.forEach(m=> m.material.opacity = 1);
-      if(phaseTime > HOLD){ phase="fade"; phaseTime=0; }
+      // pinned names never leave the hold phase — they float indefinitely
+      if(mode !== "pinned" && phaseTime > HOLD){ phase="fade"; phaseTime=0; }
     } else if(phase === "fade"){
       const t = Math.min(1, phaseTime/FADE);
       letters.forEach(m=>{ m.material.opacity = 1 - t; m.position.y = -0.25*t; });
@@ -356,6 +469,83 @@
     flipping = false;
   }
 
+  // ================= PHOTO CAPTURE =================
+  let lastPhotoBlob = null;
+  // Draw the video with object-fit:cover math into ctx at (W,H), honoring mirror.
+  function drawCover(ctx, video, W, H, mirror){
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if(!vw || !vh) return;
+    const scale = Math.max(W/vw, H/vh);
+    const dw = vw*scale, dh = vh*scale;
+    const dx = (W-dw)/2, dy = (H-dh)/2;
+    ctx.save();
+    if(mirror){ ctx.translate(W,0); ctx.scale(-1,1); }
+    ctx.drawImage(video, dx, dy, dw, dh);
+    ctx.restore();
+  }
+
+  async function takePhoto(){
+    // force a fresh render so the WebGL buffer holds the current frame
+    renderer.render(scene, camera);
+    const W = renderer.domElement.width, H = renderer.domElement.height;
+    const out = document.createElement("canvas");
+    out.width = W; out.height = H;
+    const ctx = out.getContext("2d");
+    // 1) camera feed (or the flat dark background) first
+    if(camVideo.style.display !== "none" && camVideo.videoWidth){
+      drawCover(ctx, camVideo, W, H, camVideo.classList.contains("mirror"));
+    }else{
+      ctx.fillStyle = "#050505"; ctx.fillRect(0,0,W,H);
+    }
+    // 2) the 3D balloon letters on top
+    ctx.drawImage(renderer.domElement, 0, 0, W, H);
+
+    // shutter flash
+    flash.classList.remove("fire"); void flash.offsetWidth; flash.classList.add("fire");
+
+    lastPhotoBlob = await new Promise(res => out.toBlob(res, "image/png"));
+    photoImg.src = URL.createObjectURL(lastPhotoBlob);
+    photoView.classList.add("show");
+    $("photoHint").textContent = "";
+  }
+
+  async function sharePhoto(){
+    if(!lastPhotoBlob) return;
+    const file = new File([lastPhotoBlob], "amps-science-ar.png", { type:"image/png" });
+    // Prefer the native share sheet on mobile (lets them save to Photos / send it)
+    if(navigator.canShare && navigator.canShare({ files:[file] })){
+      try{ await navigator.share({ files:[file], title:"AMPS Science AR" }); return; }
+      catch(_){ /* user cancelled — fall through to download */ }
+    }
+    // Fallback: trigger a download
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(lastPhotoBlob);
+    a.download = "amps-science-ar.png";
+    document.body.appendChild(a); a.click(); a.remove();
+    $("photoHint").textContent = "Saved to your downloads.";
+  }
+
+  // ================= ALIAS PANEL =================
+  const aliasBtns = new Map();
+  (function buildNamePanel(){
+    names.forEach(n=>{
+      const b = document.createElement("button");
+      b.className = "aliasBtn"; b.textContent = n;
+      b.addEventListener("click", ()=>{
+        pinName(n);
+        aliasBtns.forEach((el,name)=> el.classList.toggle("active", name===n));
+        namePanel.classList.remove("open");
+      });
+      aliasBtns.set(n, b);
+      namegrid.appendChild(b);
+    });
+  })();
+  $("cycleBtn").addEventListener("click", ()=>{
+    cycleAll();
+    aliasBtns.forEach(el=> el.classList.remove("active"));
+    namePanel.classList.remove("open");
+  });
+
   const startMagicOrFlatLoop = { stopped:false };
   function loopMagic(now){
     if(startMagicOrFlatLoop.stopped) return;
@@ -369,6 +559,7 @@
     await startCamera("environment");
     await enableOrientation();
     ui.classList.add("hide"); exitBtn.classList.add("show"); flipBtn.classList.add("show");
+    controls.classList.add("show");
     startMagicOrFlatLoop.stopped = false;
     requestAnimationFrame(loopMagic);
   }
@@ -378,6 +569,7 @@
     renderer.setClearColor(0x050505, 1);
     world.position.set(0, 0, -2.2);
     ui.classList.add("hide"); exitBtn.classList.add("show");
+    controls.classList.add("show");   // photo + names work here too (no camera)
     startMagicOrFlatLoop.stopped = false;
     (function loopFlat(now){
       if(startMagicOrFlatLoop.stopped) return;
@@ -395,7 +587,10 @@
     camVideo.classList.remove("mirror");
     camFacing = "environment";
     renderer.setClearColor(0x000000, 0);
-    exitBtn.classList.remove("show"); flipBtn.classList.remove("show"); ui.classList.remove("hide");
+    exitBtn.classList.remove("show"); flipBtn.classList.remove("show");
+    controls.classList.remove("show"); namePanel.classList.remove("open");
+    photoView.classList.remove("show");
+    ui.classList.remove("hide");
     setStatus("");
   }
 
@@ -422,6 +617,13 @@
   $("flatBtn").addEventListener("click", startFlat);
   exitBtn.addEventListener("click", exitToMenu);
   flipBtn.addEventListener("click", flipCamera);
+
+  // photo + names controls
+  $("shotBtn").addEventListener("click", takePhoto);
+  $("namesBtn").addEventListener("click", ()=> namePanel.classList.toggle("open"));
+  $("panelClose").addEventListener("click", ()=> namePanel.classList.remove("open"));
+  $("photoShare").addEventListener("click", sharePhoto);
+  $("photoClose").addEventListener("click", ()=> photoView.classList.remove("show"));
 })();
 </script>
 </body>
