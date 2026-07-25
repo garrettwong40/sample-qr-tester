@@ -103,6 +103,48 @@
     will-change: transform, opacity;
   }
 
+  /* ---------- ROSTER SPLASH (shows first, every load) ---------- */
+  .rosterSplash{
+    position:fixed; inset:0; z-index:20;
+    background: radial-gradient(circle at 50% 20%, #1c1c1c 0%, #050505 90%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap: 2.2vh;
+    padding: 4vh 12px;
+    opacity:1;
+    transition: opacity 1s ease;
+  }
+  .rosterSplash.hide{ opacity:0; pointer-events:none; }
+  .rosterSplash .rhead{
+    font-family:"Baloo 2","Nunito",system-ui,sans-serif;
+    font-weight:800; letter-spacing:.06em;
+    font-size: clamp(20px, 5.5vw, 40px);
+    color:#ff9ecb;
+    text-shadow:0 0 16px rgba(255,120,190,.5), 0 4px 10px rgba(0,0,0,.5);
+    text-align:center;
+  }
+  .rgrid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;      /* two columns */
+    align-items:center;
+    justify-items:center;
+    column-gap: 4vw;
+    row-gap: 1.4vh;
+    width:100%;
+    max-width: 560px;
+  }
+  .rname{
+    display:flex; align-items:flex-end; justify-content:center;
+    height: var(--rh, 34px);             /* set by JS to fit */
+    filter: drop-shadow(0 6px 7px rgba(0,0,0,.5));
+    animation: rbob 4s ease-in-out infinite;
+    will-change: transform;
+  }
+  .rname img{ display:block; height:100%; width:auto; margin:0 -0.4vw; }
+  @keyframes rbob{
+    0%,100%{ transform: translateY(0) rotate(-.4deg); }
+    50%    { transform: translateY(-7px) rotate(.4deg); }
+  }
+
   /* ---------- FINALE "WHOLE TEAM" FRAME ---------- */
   .finale{
     position:fixed;
@@ -152,6 +194,12 @@
 </style>
 </head>
 <body>
+
+  <!-- Roster splash: shown on every load, then fades into the cycling show -->
+  <div class="rosterSplash" id="rosterSplash">
+    <div class="rhead">AMPS Science</div>
+    <div class="rgrid" id="rgrid"></div>
+  </div>
 
   <div class="stagecard">
     <!-- Title -->
@@ -321,18 +369,65 @@
     els.forEach(el => el.style.height = h + "px");
   }
 
-  // wait for the letter images to load so width measurements are accurate
+  // ---- ROSTER SPLASH (two columns, all names, gentle float) ----
+  const rosterSplash = document.getElementById("rosterSplash");
+  const rgrid = document.getElementById("rgrid");
+  const SPLASH_HOLD = 3800;   // ms the roster stays before fading into the show
+
+  (function buildRoster(){
+    // keep the original order; grid fills row by row so it reads left->right
+    names.forEach((n,i)=>{
+      const el=document.createElement("div");
+      el.className="rname";
+      el.appendChild(buildWord(n));
+      el.style.animationDelay = (i*0.13)+"s";   // stagger the bob
+      rgrid.appendChild(el);
+    });
+  })();
+
+  // Size roster names so the tallest column fits the screen height, and no
+  // single name overflows its column width. All names share one height.
+  function fitRoster(){
+    const rows = Math.ceil(names.length/2);
+    const vh = window.innerHeight;
+    // budget: leave room for heading (~9%) + paddings; divide rest among rows
+    const perRow = (vh*0.80) / rows;
+    let h = Math.max(20, Math.floor(perRow*0.78));   // name height per row
+    // width guard: measure widest name at this height, shrink if needed
+    const colW = Math.min(560, rgrid.clientWidth)/2 - 12;
+    const rnames=[...rgrid.querySelectorAll(".rname")];
+    rnames.forEach(el=> el.style.setProperty("--rh", h+"px"));
+    let maxW=0; rnames.forEach(el=>{ if(el.scrollWidth>maxW) maxW=el.scrollWidth; });
+    if(maxW>colW){ h=Math.floor(h*colW/maxW); rnames.forEach(el=> el.style.setProperty("--rh", h+"px")); }
+  }
+
+  // wait for the letter images to load — but NEVER hang (timeout guard)
   const nameImgs = els.flatMap(el => [...el.querySelectorAll("img")]);
-  function whenLoaded(imgs){
+  function whenLoadedSafe(imgs, cap=2500){
     return Promise.all(imgs.map(img =>
       img.complete ? Promise.resolve()
-                   : new Promise(res => { img.onload = img.onerror = res; })));
+                   : Promise.race([
+                       new Promise(res => { img.onload = img.onerror = res; }),
+                       sleep(cap)
+                     ])));
   }
 
   (async function start(){
-    await whenLoaded(nameImgs);
+    // roster uses the same images; wait (capped) then size it
+    await whenLoadedSafe([...rgrid.querySelectorAll("img")]);
+    fitRoster();
+    window.addEventListener("resize", fitRoster);
+
+    // prep the cycling show in the background
+    await whenLoadedSafe(nameImgs);
     fitNames();
     window.addEventListener("resize", fitNames);
+
+    // hold the roster, then fade it out and start the show
+    await sleep(SPLASH_HOLD);
+    rosterSplash.classList.add("hide");
+    await sleep(1000);
+    rosterSplash.style.display = "none";
     loop();
   })();
 </script>
