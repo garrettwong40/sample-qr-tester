@@ -132,17 +132,38 @@
     width:100%;
     max-width: 560px;
   }
+  /* hold all roster animations until images are ready, then release in sync */
+  .rgrid.paused .rname,
+  .rgrid.paused .rname img{ animation-play-state: paused; }
   .rname{
     display:flex; align-items:flex-end; justify-content:center;
     height: var(--rh, 34px);             /* set by JS to fit */
     filter: drop-shadow(0 6px 7px rgba(0,0,0,.5));
+    /* the whole name bobs, but only AFTER its letters finish rising.
+       --bobDelay is set inline by JS so the bob starts post-rise. */
     animation: rbob 4s ease-in-out infinite;
+    animation-delay: var(--bobDelay, 0s);
     will-change: transform;
   }
-  .rname img{ display:block; height:100%; width:auto; margin:0 -0.4vw; }
   @keyframes rbob{
     0%,100%{ transform: translateY(0) rotate(-.4deg); }
     50%    { transform: translateY(-7px) rotate(.4deg); }
+  }
+
+  /* each letter floats up once on entry; per-letter delay set inline by JS.
+     Pure CSS so 150 letters animate smoothly without JS orchestration. */
+  .rname img{
+    display:block; height:100%; width:auto; margin:0 -0.4vw;
+    opacity:0;
+    transform: translateY(160%) scale(.9);
+    animation: rRise 1.5s cubic-bezier(.33,.15,.5,1) forwards;
+    animation-delay: var(--riseDelay, 0s);
+    will-change: transform, opacity;
+  }
+  @keyframes rRise{
+    0%   { opacity:0; transform: translateY(160%) scale(.9); }
+    60%  { opacity:1; }
+    100% { opacity:1; transform: translateY(0) scale(1); }
   }
 
   /* ---------- FINALE "WHOLE TEAM" FRAME ---------- */
@@ -198,7 +219,7 @@
   <!-- Roster splash: shown on every load, then fades into the cycling show -->
   <div class="rosterSplash" id="rosterSplash">
     <div class="rhead">AMPS Science</div>
-    <div class="rgrid" id="rgrid"></div>
+    <div class="rgrid paused" id="rgrid"></div>
   </div>
 
   <div class="stagecard">
@@ -372,15 +393,29 @@
   // ---- ROSTER SPLASH (two columns, all names, gentle float) ----
   const rosterSplash = document.getElementById("rosterSplash");
   const rgrid = document.getElementById("rgrid");
-  const SPLASH_HOLD = 3800;   // ms the roster stays before fading into the show
+  // roster must stay up long enough for the last name to finish rising:
+  // last name starts ~ 20*0.28s, + letters*0.10s + 1.5s rise ≈ 8s, then linger
+  const SPLASH_HOLD = 9500;   // ms the roster stays before fading into the show
+
+  const ROW_STAGGER  = 0.28;   // s between successive names starting to rise
+  const LETTER_STAG  = 0.10;   // s between letters within a name
+  const RISE_LEN     = 1.5;    // s for a letter's rise (matches CSS)
 
   (function buildRoster(){
-    // keep the original order; grid fills row by row so it reads left->right
+    // grid fills row by row (left->right). Names rise in reading order, each
+    // letter staggered, then the whole name begins its gentle bob.
     names.forEach((n,i)=>{
       const el=document.createElement("div");
       el.className="rname";
       el.appendChild(buildWord(n));
-      el.style.animationDelay = (i*0.13)+"s";   // stagger the bob
+      const letters=[...el.querySelectorAll("img")];
+      const nameStart = i*ROW_STAGGER;                 // when this name begins
+      letters.forEach((img,j)=>{
+        img.style.setProperty("--riseDelay",(nameStart + j*LETTER_STAG)+"s");
+      });
+      // start bobbing only after this name's last letter has risen
+      const bobStart = nameStart + (letters.length-1)*LETTER_STAG + RISE_LEN;
+      el.style.setProperty("--bobDelay", bobStart+"s");
       rgrid.appendChild(el);
     });
   })();
@@ -417,6 +452,9 @@
     await whenLoadedSafe([...rgrid.querySelectorAll("img")]);
     fitRoster();
     window.addEventListener("resize", fitRoster);
+    // release the paused rise animations now that images are ready, so the
+    // letter-rise and the SPLASH_HOLD timer below start together.
+    rgrid.classList.remove("paused");
 
     // prep the cycling show in the background
     await whenLoadedSafe(nameImgs);
