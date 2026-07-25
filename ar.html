@@ -49,6 +49,15 @@
     font-weight:800; color:#fff; background:rgba(0,0,0,.5); backdrop-filter:blur(6px);
   }
   #exit.show{ display:block; }
+  /* Flip-camera button (only shown in the camera/magic-window mode) */
+  #flip{
+    position:fixed; top:calc(14px + env(safe-area-inset-top)); left:14px; z-index:3;
+    display:none; padding:10px 16px; border-radius:999px; border:0; cursor:pointer;
+    font-weight:800; color:#fff; background:rgba(0,0,0,.5); backdrop-filter:blur(6px);
+  }
+  #flip.show{ display:block; }
+  /* mirror the feed when using the front (selfie) camera, like a mirror */
+  #cam.mirror{ transform:scaleX(-1); }
 </style>
 </head>
 <body>
@@ -63,6 +72,7 @@
     <div id="status"></div>
   </div>
   <button id="exit">✕ Exit</button>
+  <button id="flip">🔄 Flip camera</button>
 
 <!-- three.js (global build, non-module) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -84,7 +94,7 @@
   const setStatus = t => { $("status").textContent = t; };
 
   // ---------- DOM refs ----------
-  const ui = $("ui"), camVideo = $("cam"), exitBtn = $("exit");
+  const ui = $("ui"), camVideo = $("cam"), exitBtn = $("exit"), flipBtn = $("flip");
 
   // ---------- three.js core ----------
   const renderer = new THREE.WebGLRenderer({ canvas: $("gl"), alpha:true, antialias:true });
@@ -315,19 +325,35 @@
     }catch(_){ /* no gyro — content just stays centered */ }
   }
 
-  async function startCamera(){
+  let camFacing = "environment";   // "environment" (rear) | "user" (front)
+  async function startCamera(facing){
+    camFacing = facing || camFacing;
+    // stop any existing stream before requesting a new one (needed to switch)
+    if(camVideo.srcObject){ camVideo.srcObject.getTracks().forEach(t=>t.stop()); camVideo.srcObject=null; }
     try{
       const stream = await navigator.mediaDevices.getUserMedia({
-        video:{ facingMode:{ ideal:"environment" } }, audio:false
+        video:{ facingMode:{ ideal: camFacing } }, audio:false
       });
       camVideo.srcObject = stream;
       camVideo.style.display = "block";
+      // mirror the front camera so it reads like a mirror, not backwards
+      camVideo.classList.toggle("mirror", camFacing === "user");
       await camVideo.play().catch(()=>{});
       return true;
     }catch(err){
       setStatus("Camera unavailable — showing it on a black background instead.");
       return false;
     }
+  }
+
+  // Flip between rear and front cameras (magic-window mode only)
+  let flipping = false;
+  async function flipCamera(){
+    if(flipping) return; flipping = true;
+    const next = camFacing === "environment" ? "user" : "environment";
+    const ok = await startCamera(next);
+    if(!ok){ setStatus("Couldn't switch camera."); }
+    flipping = false;
   }
 
   const startMagicOrFlatLoop = { stopped:false };
@@ -340,9 +366,9 @@
 
   async function startMagicWindow(){
     world.position.set(0, 0, -2.2);
-    await startCamera();
+    await startCamera("environment");
     await enableOrientation();
-    ui.classList.add("hide"); exitBtn.classList.add("show");
+    ui.classList.add("hide"); exitBtn.classList.add("show"); flipBtn.classList.add("show");
     startMagicOrFlatLoop.stopped = false;
     requestAnimationFrame(loopMagic);
   }
@@ -366,8 +392,10 @@
     if(renderer.xr.isPresenting){ renderer.xr.getSession()?.end(); }
     if(camVideo.srcObject){ camVideo.srcObject.getTracks().forEach(t=>t.stop()); camVideo.srcObject=null; }
     camVideo.style.display="none";
+    camVideo.classList.remove("mirror");
+    camFacing = "environment";
     renderer.setClearColor(0x000000, 0);
-    exitBtn.classList.remove("show"); ui.classList.remove("hide");
+    exitBtn.classList.remove("show"); flipBtn.classList.remove("show"); ui.classList.remove("hide");
     setStatus("");
   }
 
@@ -393,6 +421,7 @@
   });
   $("flatBtn").addEventListener("click", startFlat);
   exitBtn.addEventListener("click", exitToMenu);
+  flipBtn.addEventListener("click", flipCamera);
 })();
 </script>
 </body>
