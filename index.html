@@ -155,14 +155,15 @@
   .rname img{
     display:block; height:100%; width:auto; margin:0 -0.4vw;
     opacity:0;
-    transform: translateY(160%) scale(.9);
-    animation: rRise 1.5s cubic-bezier(.33,.15,.5,1) forwards;
+    transform: translateY(200%) scale(.9);
+    /* slow, buoyant, near-constant drift (same easing as single-name rise) */
+    animation: rRise 3.2s cubic-bezier(.33,.15,.5,1) forwards;
     animation-delay: var(--riseDelay, 0s);
     will-change: transform, opacity;
   }
   @keyframes rRise{
-    0%   { opacity:0; transform: translateY(160%) scale(.9); }
-    60%  { opacity:1; }
+    0%   { opacity:0; transform: translateY(200%) scale(.9); }
+    40%  { opacity:1; }
     100% { opacity:1; transform: translateY(0) scale(1); }
   }
 
@@ -394,28 +395,30 @@
   const rosterSplash = document.getElementById("rosterSplash");
   const rgrid = document.getElementById("rgrid");
   // roster must stay up long enough for the last name to finish rising:
-  // last name starts ~ 20*0.28s, + letters*0.10s + 1.5s rise ≈ 8s, then linger
-  const SPLASH_HOLD = 9500;   // ms the roster stays before fading into the show
+  // last name starts ~ 20*0.35s=7s, + 1.4s spread + 3.2s rise ≈ 11.6s, then linger
+  const SPLASH_HOLD = 13500;  // ms the roster stays before fading into the show
 
-  const ROW_STAGGER  = 0.28;   // s between successive names starting to rise
-  const LETTER_STAG  = 0.10;   // s between letters within a name
-  const RISE_LEN     = 1.5;    // s for a letter's rise (matches CSS)
+  const ROW_STAGGER  = 0.35;   // s between successive names starting to rise
+  const LETTER_SPREAD= 1.4;    // s window over which a name's letters rise (RANDOM within)
+  const RISE_LEN     = 3.2;    // s for a letter's rise (matches CSS)
 
   (function buildRoster(){
-    // grid fills row by row (left->right). Names rise in reading order, each
-    // letter staggered, then the whole name begins its gentle bob.
+    // Names begin in reading order, but WITHIN each name the letters rise in
+    // RANDOM order with random delays — like the single-name animation — so it
+    // drifts up organically instead of sweeping left-to-right.
     names.forEach((n,i)=>{
       const el=document.createElement("div");
       el.className="rname";
       el.appendChild(buildWord(n));
       const letters=[...el.querySelectorAll("img")];
-      const nameStart = i*ROW_STAGGER;                 // when this name begins
-      letters.forEach((img,j)=>{
-        img.style.setProperty("--riseDelay",(nameStart + j*LETTER_STAG)+"s");
+      const nameStart = i*ROW_STAGGER;
+      letters.forEach(img=>{
+        const d = nameStart + Math.random()*LETTER_SPREAD;   // random per letter
+        img.style.setProperty("--riseDelay", d.toFixed(2)+"s");
       });
-      // start bobbing only after this name's last letter has risen
-      const bobStart = nameStart + (letters.length-1)*LETTER_STAG + RISE_LEN;
-      el.style.setProperty("--bobDelay", bobStart+"s");
+      // bob starts after the whole name could be up (worst-case last letter)
+      const bobStart = nameStart + LETTER_SPREAD + RISE_LEN;
+      el.style.setProperty("--bobDelay", bobStart.toFixed(2)+"s");
       rgrid.appendChild(el);
     });
   })();
