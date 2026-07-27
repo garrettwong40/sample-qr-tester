@@ -39,27 +39,17 @@
     50%    { transform: translateY(-10px) rotate(.5deg); }
   }
 
-  /* ---- motto pinned to the bottom: "99%" + balloon SCIENCE + "1%" + balloon MAGIC ---- */
+  /* ---- motto pinned to the bottom: all balloon lettering "99% SCIENCE 1% MAGIC" ---- */
   #motto{
     display:flex; align-items:flex-end; justify-content:center; flex-wrap:wrap;
-    gap: 0 1.4vw;
+    gap: 0 1.6vw;
     filter: drop-shadow(0 6px 10px rgba(0,0,0,.55));
     animation: floaty 5s ease-in-out infinite;
   }
-  /* the balloon words reuse the same letter PNGs as the title */
-  #motto .word{ display:flex; align-items:flex-end; justify-content:center; }
+  #motto .word{ display:flex; align-items:flex-end; justify-content:center; height: clamp(24px, 6.6vw, 56px); }
   #motto .word img{ display:block; height:100%; width:auto; margin:0 -0.5vw; }
-  #motto .word{ height: clamp(22px, 6.2vw, 52px); }
-  /* the digits/% that have no balloon art, styled to sit alongside */
-  #motto .pct{
-    font-family:"Baloo 2","Nunito",system-ui,sans-serif;
-    font-weight:800; line-height:0.95;
-    font-size: clamp(20px, 5.6vw, 48px);
-    text-shadow:0 2px 10px rgba(0,0,0,.65), 0 0 20px rgba(0,0,0,.5);
-    align-self:flex-end;
-  }
-  #motto .pct.white{ color:#ffffff; }
-  #motto .pct.pink{ color:#ff9ecb; }
+  /* the % and digit glyphs need a touch more spacing than overlapping letters */
+  #motto #m99 img, #motto #m1 img{ margin:0 0.2vw; }
 
   /* ---- bottom controls ---- */
   #controls{
@@ -133,9 +123,9 @@
       <div class="word science" id="w2"></div>
     </div>
     <div id="motto">
-      <span class="pct white">99%</span>
+      <div class="word" id="m99"></div>
       <div class="word" id="mSci"></div>
-      <span class="pct pink">1%</span>
+      <div class="word" id="m1"></div>
       <div class="word" id="mMagic"></div>
     </div>
   </div>
@@ -177,11 +167,14 @@
         photoImg = $("photoImg"), flash = $("flash");
 
   // ---------- build the balloon-letter title from the PNGs ----------
+  // Maps characters to their PNG filename. Digits and % use dedicated glyphs.
+  const GLYPH = { "%":"PCT" };
+  function fileFor(ch){ return DIR + (GLYPH[ch] || ch) + ".png"; }
   function buildWord(el, text){
     for(const ch of text.toUpperCase()){
       if(ch === " ") continue;
       const img = document.createElement("img");
-      img.src = DIR + ch + ".png";
+      img.src = fileFor(ch);
       img.alt = ch;
       img.crossOrigin = "anonymous"; // same-origin anyway; keeps canvas untainted
       el.appendChild(img);
@@ -189,8 +182,10 @@
   }
   buildWord($("w1"), "AMPS");
   buildWord($("w2"), "SCIENCE");
-  // motto balloon words (digits/% are plain styled text in the markup)
+  // motto now fully balloon-lettered: "99%" SCIENCE "1%" MAGIC
+  buildWord($("m99"), "99%");
   buildWord($("mSci"), "SCIENCE");
+  buildWord($("m1"), "1%");
   buildWord($("mMagic"), "MAGIC");
 
   // ---------- camera ----------
@@ -246,25 +241,13 @@
     const sx = W / window.innerWidth, sy = H / window.innerHeight;
     // All balloon letters in the frame (title + motto words), drawn un-mirrored
     // by their on-screen position so the photo matches what's displayed.
+    // Every balloon glyph in the frame (title + full motto), drawn by its
+    // on-screen rect so the photo matches exactly what's displayed.
     document.querySelectorAll("#frame img").forEach(img=>{
       if(!img.complete || !img.naturalWidth) return;
       const r = img.getBoundingClientRect();
       if(r.width <= 0 || r.height <= 0) return;
       ctx.drawImage(img, r.left*sx, r.top*sy, r.width*sx, r.height*sy);
-    });
-    // The "99%" / "1%" text spans (no balloon art) — draw at their positions.
-    document.querySelectorAll("#motto .pct").forEach(span=>{
-      const r = span.getBoundingClientRect();
-      const fs = Math.round(r.height * sy * 0.82);
-      ctx.save();
-      ctx.font = `800 ${fs}px "Baloo 2","Nunito",system-ui,sans-serif`;
-      ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-      ctx.shadowColor = "rgba(0,0,0,.65)"; ctx.shadowBlur = fs*0.5; ctx.shadowOffsetY = fs*0.06;
-      ctx.fillStyle = span.classList.contains("pink") ? "#ff9ecb" : "#ffffff";
-      const cx = (r.left + r.width/2) * sx;
-      const baseY = (r.bottom - r.height*0.12) * sy;   // approx text baseline
-      ctx.fillText(span.textContent, cx, baseY);
-      ctx.restore();
     });
   }
 
