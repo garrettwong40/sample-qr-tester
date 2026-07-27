@@ -3,478 +3,214 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>AMPS Science — AR</title>
+<title>AMPS Science — Selfie</title>
 <style>
   *{ margin:0; padding:0; box-sizing:border-box; }
   html,body{ height:100%; overflow:hidden; background:#000; }
   body{ font-family:system-ui,sans-serif; color:#fff; }
 
-  /* Live camera feed sits behind the transparent WebGL canvas (magic-window mode) */
+  /* Fullscreen camera feed */
   #cam{
     position:fixed; inset:0; width:100%; height:100%;
-    object-fit:cover; z-index:0; background:#000; display:none;
+    object-fit:cover; z-index:0; background:#000;
   }
-  #gl{ position:fixed; inset:0; z-index:1; }
+  #cam.mirror{ transform:scaleX(-1); }   /* selfie = mirrored, like a mirror */
 
-  /* Start / status overlay (also used as WebXR dom-overlay) */
-  #ui{
-    position:fixed; inset:0; z-index:2;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:22px; padding:28px;
-    background: radial-gradient(circle at 50% 30%, #1c1c1c 0%, #050505 92%);
-    text-align:center; transition:opacity .6s ease;
+  /* The photo-booth frame: title pinned top, motto pinned bottom, middle clear */
+  #frame{
+    position:fixed; inset:0; z-index:1;
+    display:flex; flex-direction:column; align-items:center; justify-content:space-between;
+    padding: calc(18px + env(safe-area-inset-top)) 12px calc(96px + env(safe-area-inset-bottom));
+    pointer-events:none;   /* let touches fall through to buttons */
   }
-  #ui.hide{ opacity:0; pointer-events:none; }
-  #ui h1{
-    font-size: clamp(28px, 8vw, 52px); font-weight:800; letter-spacing:.03em;
-    color:#ff9ecb; text-shadow:0 0 18px rgba(255,120,190,.55);
-  }
-  #ui p{ max-width:420px; line-height:1.5; color:#dcdcdc; font-size:15px; }
-  .btn{
-    appearance:none; border:0; cursor:pointer;
-    font-size:18px; font-weight:800; letter-spacing:.02em;
-    padding:16px 30px; border-radius:999px; color:#3a0a22;
-    background:linear-gradient(178deg,#ff9ecb 0%,#f25c9c 100%);
-    box-shadow:0 10px 24px rgba(242,92,156,.35);
-  }
-  .btn.secondary{
-    background:transparent; color:#ff9ecb;
-    border:2px solid rgba(255,158,203,.6); box-shadow:none; font-size:15px; padding:12px 22px;
-  }
-  #status{ font-size:13px; color:#9a9a9a; min-height:18px; }
-  /* Small "exit" button shown while an AR view is running */
-  #exit{
-    position:fixed; top:calc(14px + env(safe-area-inset-top)); right:14px; z-index:3;
-    display:none; padding:10px 16px; border-radius:999px; border:0; cursor:pointer;
-    font-weight:800; color:#fff; background:rgba(0,0,0,.5); backdrop-filter:blur(6px);
-  }
-  #exit.show{ display:block; }
-  /* Flip-camera button (only shown in the camera/magic-window mode) */
-  #flip{
-    position:fixed; top:calc(14px + env(safe-area-inset-top)); left:14px; z-index:3;
-    display:none; padding:10px 16px; border-radius:999px; border:0; cursor:pointer;
-    font-weight:800; color:#fff; background:rgba(0,0,0,.5); backdrop-filter:blur(6px);
-  }
-  #flip.show{ display:block; }
-  /* mirror the feed when using the front (selfie) camera, like a mirror */
-  #cam.mirror{ transform:scaleX(-1); }
 
-  /* Bottom control bar (photo + names), shown while a camera/flat view runs */
+  /* ---- balloon-letter title (reuses the team's letter PNGs) ---- */
+  #title{
+    display:flex; flex-direction:column; align-items:center; gap:0.6vh;
+    filter: drop-shadow(0 8px 14px rgba(0,0,0,.55));
+    animation: floaty 4.5s ease-in-out infinite;
+  }
+  #title .word{ display:flex; align-items:flex-end; justify-content:center; }
+  #title .word img{ display:block; height:100%; width:auto; margin:0 -0.6vw; }
+  #title .word.amps{ height: clamp(34px, 10vw, 84px); }
+  #title .word.science{ height: clamp(26px, 7.6vw, 64px); }
+  @keyframes floaty{
+    0%,100%{ transform: translateY(0) rotate(-.5deg); }
+    50%    { transform: translateY(-10px) rotate(.5deg); }
+  }
+
+  /* ---- motto pinned to the bottom ---- */
+  #motto{
+    font-family:"Baloo 2","Nunito",system-ui,sans-serif;
+    font-weight:800; letter-spacing:.02em;
+    font-size: clamp(17px, 5.4vw, 34px);
+    text-shadow:0 2px 10px rgba(0,0,0,.65), 0 0 20px rgba(0,0,0,.5);
+  }
+  #motto .sci{ color:#ffffff; }
+  #motto .magic{ color:#ff9ecb; }
+
+  /* ---- bottom controls ---- */
   #controls{
-    position:fixed; left:0; right:0; z-index:3;
-    bottom:calc(18px + env(safe-area-inset-bottom));
-    display:none; justify-content:center; gap:14px; padding:0 16px;
+    position:fixed; left:0; right:0; z-index:2;
+    bottom:calc(20px + env(safe-area-inset-bottom));
+    display:flex; align-items:center; justify-content:center; gap:22px;
   }
-  #controls.show{ display:flex; }
   .ctl{
-    appearance:none; border:0; cursor:pointer;
-    font-weight:800; font-size:15px; color:#fff;
-    padding:14px 20px; border-radius:999px;
-    background:rgba(0,0,0,.5); backdrop-filter:blur(6px);
+    appearance:none; border:0; cursor:pointer; color:#fff; font-weight:800;
+    background:rgba(0,0,0,.45); backdrop-filter:blur(6px);
+    width:54px; height:54px; border-radius:999px; font-size:22px;
+    display:flex; align-items:center; justify-content:center;
   }
-  .ctl.primary{
-    color:#3a0a22; background:linear-gradient(178deg,#ff9ecb 0%,#f25c9c 100%);
-    box-shadow:0 8px 20px rgba(242,92,156,.4);
-  }
-
-  /* Slide-up alias panel */
-  #namePanel{
-    position:fixed; left:0; right:0; bottom:0; z-index:4;
-    max-height:60vh; padding:18px 16px calc(22px + env(safe-area-inset-bottom));
-    background:rgba(10,10,12,.92); backdrop-filter:blur(10px);
-    border-top-left-radius:22px; border-top-right-radius:22px;
-    box-shadow:0 -12px 40px rgba(0,0,0,.6);
-    transform:translateY(110%); transition:transform .3s ease;
-    overflow-y:auto;
-  }
-  #namePanel.open{ transform:translateY(0); }
-  #namePanel h3{ text-align:center; color:#ff9ecb; font-size:16px; margin-bottom:12px; font-weight:800; }
-  .namegrid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(120px,1fr)); gap:10px; }
-  .aliasBtn{
-    appearance:none; border:1px solid rgba(255,158,203,.35); cursor:pointer;
-    padding:12px 8px; border-radius:14px; font-weight:800; font-size:14px;
-    color:#ffd6ea; background:rgba(242,92,156,.12);
-  }
-  .aliasBtn.active{ background:linear-gradient(178deg,#ff9ecb 0%,#f25c9c 100%); color:#3a0a22; border-color:transparent; }
-  #cycleBtn{
-    grid-column:1 / -1; padding:14px; border-radius:14px; border:0; cursor:pointer;
-    font-weight:800; font-size:15px; color:#3a0a22; margin-bottom:4px;
-    background:linear-gradient(178deg,#ffe08a 0%,#f5b301 100%);
-  }
-  #panelClose{
-    position:absolute; top:10px; right:14px; border:0; cursor:pointer;
-    background:transparent; color:#bbb; font-size:22px; font-weight:800; line-height:1;
+  /* big round shutter */
+  #shot{
+    width:74px; height:74px; border-radius:999px; cursor:pointer;
+    border:5px solid rgba(255,255,255,.9);
+    background:linear-gradient(178deg,#ff9ecb 0%,#f25c9c 100%);
+    box-shadow:0 8px 22px rgba(242,92,156,.5);
   }
 
-  /* Photo preview overlay */
+  /* ---- tap-to-start gate ---- */
+  #gate{
+    position:fixed; inset:0; z-index:5;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:20px; padding:28px; text-align:center;
+    background: radial-gradient(circle at 50% 30%, #1c1c1c 0%, #050505 92%);
+    transition:opacity .5s ease;
+  }
+  #gate.hide{ opacity:0; pointer-events:none; }
+  #gate h1{ font-size:clamp(28px,8vw,52px); font-weight:800; color:#ff9ecb; text-shadow:0 0 18px rgba(255,120,190,.55); }
+  #gate p{ max-width:360px; line-height:1.5; color:#dcdcdc; font-size:15px; }
+  #gate button{
+    appearance:none; border:0; cursor:pointer; font-size:19px; font-weight:800;
+    padding:18px 34px; border-radius:999px; color:#3a0a22;
+    background:linear-gradient(178deg,#ff9ecb 0%,#f25c9c 100%);
+    box-shadow:0 10px 24px rgba(242,92,156,.4);
+  }
+  #gate small{ color:#8f8f8f; font-size:12px; min-height:16px; }
+
+  /* ---- photo preview ---- */
   #photoView{
-    position:fixed; inset:0; z-index:5; display:none;
+    position:fixed; inset:0; z-index:6; display:none;
     flex-direction:column; align-items:center; justify-content:center; gap:16px;
-    background:rgba(0,0,0,.92); padding:24px;
+    background:rgba(0,0,0,.93); padding:24px;
   }
   #photoView.show{ display:flex; }
   #photoView img{ max-width:92%; max-height:66vh; border-radius:14px; box-shadow:0 12px 40px rgba(0,0,0,.6); }
-  #photoView .hint{ color:#bbb; font-size:13px; text-align:center; }
   #photoView .row{ display:flex; gap:14px; }
+  #photoView .hint{ color:#bbb; font-size:13px; text-align:center; min-height:16px; }
+  .pbtn{
+    appearance:none; border:0; cursor:pointer; font-size:16px; font-weight:800;
+    padding:14px 24px; border-radius:999px; color:#3a0a22;
+    background:linear-gradient(178deg,#ff9ecb 0%,#f25c9c 100%);
+  }
+  .pbtn.secondary{ background:transparent; color:#ff9ecb; border:2px solid rgba(255,158,203,.6); }
 
-  /* white flash on shutter */
-  #flash{ position:fixed; inset:0; z-index:6; background:#fff; opacity:0; pointer-events:none; }
+  /* shutter flash */
+  #flash{ position:fixed; inset:0; z-index:7; background:#fff; opacity:0; pointer-events:none; }
   #flash.fire{ animation:flash .35s ease-out; }
   @keyframes flash{ 0%{opacity:.9;} 100%{opacity:0;} }
 </style>
 </head>
 <body>
   <video id="cam" playsinline muted autoplay></video>
-  <canvas id="gl"></canvas>
 
-  <div id="ui">
-    <h1>AMPS Science ♡</h1>
-    <p id="lede">Point your phone around and the team's balloon names will float in the space in front of you.</p>
-    <button class="btn" id="startBtn">Start AR</button>
-    <button class="btn secondary" id="flatBtn">Just watch it (no camera)</button>
-    <div id="status"></div>
-  </div>
-  <button id="exit">✕ Exit</button>
-  <button id="flip">🔄 Flip camera</button>
-
-  <!-- bottom controls: take photo + open alias panel -->
-  <div id="controls">
-    <button class="ctl" id="namesBtn">👤 Names</button>
-    <button class="ctl primary" id="shotBtn">📸 Photo</button>
-  </div>
-
-  <!-- slide-up alias picker -->
-  <div id="namePanel">
-    <button id="panelClose">✕</button>
-    <h3>Pick a name to keep it floating</h3>
-    <div class="namegrid" id="namegrid">
-      <button id="cycleBtn">↻ Cycle everyone</button>
+  <!-- frame overlay: title top, motto bottom, person in the middle -->
+  <div id="frame">
+    <div id="title">
+      <div class="word amps" id="w1"></div>
+      <div class="word science" id="w2"></div>
     </div>
+    <div id="motto"><span class="sci">99% Science </span><span class="magic">1% Magic</span></div>
+  </div>
+
+  <!-- controls -->
+  <div id="controls">
+    <button class="ctl" id="flip" title="Flip camera">🔄</button>
+    <button id="shot" title="Take photo"></button>
+    <button class="ctl" id="close" title="Close" style="font-size:20px;">✕</button>
+  </div>
+
+  <!-- tap to start (needed for camera permission) -->
+  <div id="gate">
+    <h1>AMPS Science ♡</h1>
+    <p>Tap to open the selfie booth — strike a pose between the balloons!</p>
+    <button id="startBtn">📸 Open selfie booth</button>
+    <small id="gateMsg"></small>
   </div>
 
   <!-- photo preview -->
   <div id="photoView">
-    <img id="photoImg" alt="Your AR photo" />
+    <img id="photoImg" alt="Your selfie" />
     <div class="row">
-      <button class="btn" id="photoShare">Share / Save</button>
-      <button class="btn secondary" id="photoClose">Back</button>
+      <button class="pbtn" id="photoShare">Share / Save</button>
+      <button class="pbtn secondary" id="photoClose">Retake</button>
     </div>
     <div class="hint" id="photoHint"></div>
   </div>
 
   <div id="flash"></div>
 
-<!-- three.js (global build, non-module) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 (function(){
   "use strict";
 
   const DIR = "letters/";
-  const names = [
-    "alexijia","amdhanda","achanish","boopalb","bverkhov","nevina",
-    "elcimren","gcwong","jmanas","kriswpan","kynovak","meisamhe",
-    "mozadeh","rninad","pstudans","rpothen","rzmiao","devadula",
-    "saniaki","ssamaga","khatrivi"
-  ];
-
-  // ---------- tiny helpers ----------
   const $ = id => document.getElementById(id);
-  const rand = (a,b)=> a + Math.random()*(b-a);
-  const setStatus = t => { $("status").textContent = t; };
+  const camVideo = $("cam"), gate = $("gate"), photoView = $("photoView"),
+        photoImg = $("photoImg"), flash = $("flash");
 
-  // ---------- DOM refs ----------
-  const ui = $("ui"), camVideo = $("cam"), exitBtn = $("exit"), flipBtn = $("flip");
-  const controls = $("controls"), namePanel = $("namePanel"), namegrid = $("namegrid");
-  const photoView = $("photoView"), photoImg = $("photoImg"), flash = $("flash");
-
-  // ---------- three.js core ----------
-  const renderer = new THREE.WebGLRenderer({ canvas: $("gl"), alpha:true, antialias:true, preserveDrawingBuffer:true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setClearColor(0x000000, 0); // transparent so the camera feed shows through
-
-  const scene  = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 50);
-
-  // A "rig" we rotate with the gyroscope in magic-window mode. In WebXR mode the
-  // headset/phone pose drives the camera directly and the rig stays at identity.
-  const rig = new THREE.Object3D();
-  rig.add(camera);
-  scene.add(rig);
-
-  // Everything the user sees floats inside this group, ~2m in front of them.
-  const world = new THREE.Group();
-  world.position.set(0, 0, -2.2);
-  scene.add(world);
-
-  window.addEventListener("resize", ()=>{
-    camera.aspect = window.innerWidth/window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
-
-  // ---------- texture preloading ----------
-  const loader = new THREE.TextureLoader();
-  const texCache = new Map(); // char -> {tex, aspect}
-  function loadChar(ch){
-    if(texCache.has(ch)) return Promise.resolve(texCache.get(ch));
-    return new Promise(res=>{
-      loader.load(DIR + ch + ".png",
-        tex=>{
-          tex.colorSpace = THREE.SRGBColorSpace || tex.colorSpace;
-          const img = tex.image;
-          const aspect = (img && img.width && img.height) ? img.width/img.height : 0.7;
-          const rec = { tex, aspect };
-          texCache.set(ch, rec); res(rec);
-        },
-        undefined,
-        ()=>{ const rec={tex:null, aspect:0.7}; texCache.set(ch,rec); res(rec); } // never hang
-      );
-    });
-  }
-
-  // ---------- balloon-letter word builder ----------
-  // Returns a THREE.Group of textured planes laid out horizontally and centered.
-  function buildWord(text, height){
-    const group = new THREE.Group();
-    const overlap = 0.90;            // letters slightly overlap, like the 2D version
-    const chars = [...text.toUpperCase()].filter(c => c !== " ");
-    let x = 0;
-    const placed = [];
-    for(const ch of chars){
-      const rec = texCache.get(ch);
-      if(!rec || !rec.tex) continue;
-      const w = height * rec.aspect;
-      const geo = new THREE.PlaneGeometry(w, height);
-      const mat = new THREE.MeshBasicMaterial({ map: rec.tex, transparent:true, depthWrite:false });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.x = x + w/2;
-      mesh.userData.phase = rand(0, Math.PI*2);   // per-letter bob offset
-      mesh.userData.baseY = 0;
-      group.add(mesh);
-      placed.push(mesh);
-      x += w * overlap;
-    }
-    // center the whole word on x=0
-    const total = x;
-    placed.forEach(m => m.position.x -= total/2);
-    group.userData.letters = placed;
-    return group;
-  }
-
-  // ---------- scene content: title + one cycling name ----------
-  const title = new THREE.Group();          // "AMPS" over "SCIENCE"
-  const stage = new THREE.Group();          // where names rise & fade
-  world.add(title, stage);
-
-  let currentName = null;
-
-  async function buildStaticContent(){
-    // preload every glyph we need up front
-    const need = new Set();
-    "AMPSSCIENCE".split("").forEach(c=>need.add(c));
-    names.forEach(n => n.toUpperCase().split("").forEach(c=>need.add(c)));
-    await Promise.all([...need].map(loadChar));
-
-    const amps = buildWord("AMPS", 0.34);
-    const sci  = buildWord("SCIENCE", 0.26);
-    amps.position.y = 0.95;
-    sci.position.y  = 0.60;
-    title.add(amps, sci);
-    title.userData.words = [amps, sci];
-  }
-
-  function showName(text){
-    // clear previous
-    while(stage.children.length) stage.remove(stage.children[0]);
-    const w = buildWord(text, 0.30);
-    w.position.y = 0.0;
-    // start hidden/low, letters will rise & fade in over time
-    w.userData.letters.forEach(m=>{
-      m.material.opacity = 0;
-      m.userData.riseDelay = rand(0, 900);      // ms
-      m.userData.startY = -0.7;
-    });
-    w.userData.born = performance.now();
-    stage.add(w);
-    currentName = w;
-  }
-
-  // simple cycle timing (ms)
-  const RISE = 2600, HOLD = 2400, FADE = 1400, GAP = 400;
-  let order = [], oi = 0, phaseTime = 0, phase = "rise";
-  let mode = "cycle";          // "cycle" = rotate through everyone | "pinned" = one name stays
-  let pinnedText = null;
-  function reshuffle(){
-    order = names.map((_,i)=>i);
-    for(let i=order.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
-    oi = 0;
-  }
-
-  // Pin a single alias so it rises once and then stays forever (no fade).
-  function pinName(text){
-    mode = "pinned"; pinnedText = text;
-    showName(text);
-    phase = "rise"; phaseTime = 0;
-  }
-  // Resume rotating through everyone.
-  function cycleAll(){
-    mode = "cycle"; pinnedText = null;
-    reshuffle();
-    showName(names[order[oi]]);
-    phase = "rise"; phaseTime = 0;
-  }
-
-  function tickCycle(now, dt){
-    if(!currentName){
-      if(mode === "pinned" && pinnedText){ pinName(pinnedText); }
-      else { reshuffle(); showName(names[order[oi]]); phase="rise"; phaseTime=0; }
-      return;
-    }
-    phaseTime += dt;
-    const letters = currentName.userData.letters;
-    const elapsed = now - currentName.userData.born;
-
-    if(phase === "rise"){
-      letters.forEach(m=>{
-        const t = Math.min(1, Math.max(0, (elapsed - m.userData.riseDelay)/RISE));
-        const e = 1 - Math.pow(1-t, 3); // easeOutCubic
-        m.material.opacity = e;
-        m.position.y = m.userData.startY + (0 - m.userData.startY)*e;
-      });
-      if(phaseTime > RISE + 900){ phase="hold"; phaseTime=0; }
-    } else if(phase === "hold"){
-      letters.forEach(m=> m.material.opacity = 1);
-      // pinned names never leave the hold phase — they float indefinitely
-      if(mode !== "pinned" && phaseTime > HOLD){ phase="fade"; phaseTime=0; }
-    } else if(phase === "fade"){
-      const t = Math.min(1, phaseTime/FADE);
-      letters.forEach(m=>{ m.material.opacity = 1 - t; m.position.y = -0.25*t; });
-      if(phaseTime > FADE + GAP){
-        oi++;
-        if(oi >= order.length) reshuffle();
-        showName(names[order[oi]]);
-        phase="rise"; phaseTime=0;
-      }
+  // ---------- build the balloon-letter title from the PNGs ----------
+  function buildWord(el, text){
+    for(const ch of text.toUpperCase()){
+      if(ch === " ") continue;
+      const img = document.createElement("img");
+      img.src = DIR + ch + ".png";
+      img.alt = ch;
+      img.crossOrigin = "anonymous"; // same-origin anyway; keeps canvas untainted
+      el.appendChild(img);
     }
   }
+  buildWord($("w1"), "AMPS");
+  buildWord($("w2"), "SCIENCE");
 
-  // ---------- per-frame float animation ----------
-  function floatLetters(group, now){
-    const ls = group.userData.letters; if(!ls) return;
-    ls.forEach(m=>{
-      m.position.y = (m.position.y) + Math.sin(now/900 + m.userData.phase)*0.0009;
-      m.rotation.z = Math.sin(now/1100 + m.userData.phase)*0.05;
-    });
-  }
-
-  let last = performance.now();
-  function animate(now){
-    const dt = now - last; last = now;
-    // gentle whole-group bob
-    world.position.y = Math.sin(now/1600)*0.05;
-    (title.userData.words||[]).forEach(w=> floatLetters(w, now));
-    tickCycle(now, dt);
-    renderer.render(scene, camera);
-  }
-
-  // ================= MODE 1: WebXR immersive AR =================
-  async function startXR(){
-    try{
-      const session = await navigator.xr.requestSession("immersive-ar", {
-        optionalFeatures:["dom-overlay","local-floor"],
-        domOverlay:{ root: ui }
-      });
-      renderer.xr.enabled = true;
-      await renderer.xr.setSession(session);
-      // In XR, the device pose drives the camera; keep our rig neutral.
-      rig.quaternion.identity();
-      world.position.set(0, 1.3, -2.2); // eye-ish height, 2.2m ahead
-      ui.classList.add("hide"); exitBtn.classList.add("show");
-      setStatus("");
-      session.addEventListener("end", ()=>{
-        renderer.xr.enabled = false;
-        renderer.setAnimationLoop(null);
-        exitBtn.classList.remove("show"); ui.classList.remove("hide");
-        startMagicOrFlatLoop.stopped = true;
-      });
-      renderer.setAnimationLoop(animate);
-    }catch(err){
-      setStatus("Couldn't start immersive AR — falling back to camera view.");
-      startMagicWindow();
-    }
-  }
-
-  // ================= MODE 2: magic window (camera + gyro) =================
-  let deviceQuat = new THREE.Quaternion();
-  const zee = new THREE.Vector3(0,0,1);
-  const q0  = new THREE.Quaternion();
-  const euler = new THREE.Euler();
-  // -90° around X maps device space to three.js world "look forward"
-  const screenTransform = new THREE.Quaternion(-Math.sqrt(0.5),0,0,Math.sqrt(0.5));
-  function onOrientation(e){
-    if(e.alpha == null) return;
-    const a = THREE.MathUtils.degToRad(e.alpha);
-    const b = THREE.MathUtils.degToRad(e.beta);
-    const g = THREE.MathUtils.degToRad(e.gamma);
-    const orient = THREE.MathUtils.degToRad(window.orientation || 0);
-    euler.set(b, a, -g, "YXZ");
-    deviceQuat.setFromEuler(euler);
-    deviceQuat.multiply(screenTransform);
-    deviceQuat.multiply(q0.setFromAxisAngle(zee, -orient));
-  }
-
-  async function enableOrientation(){
-    // iOS 13+ needs an explicit permission request from a user gesture
-    try{
-      if(typeof DeviceOrientationEvent !== "undefined" &&
-         typeof DeviceOrientationEvent.requestPermission === "function"){
-        const res = await DeviceOrientationEvent.requestPermission();
-        if(res === "granted") window.addEventListener("deviceorientation", onOrientation, true);
-      }else{
-        window.addEventListener("deviceorientation", onOrientation, true);
-      }
-    }catch(_){ /* no gyro — content just stays centered */ }
-  }
-
-  let camFacing = "environment";   // "environment" (rear) | "user" (front)
+  // ---------- camera ----------
+  let camFacing = "user";   // start in selfie (front) mode
   async function startCamera(facing){
     camFacing = facing || camFacing;
-    // stop any existing stream before requesting a new one (needed to switch)
     if(camVideo.srcObject){ camVideo.srcObject.getTracks().forEach(t=>t.stop()); camVideo.srcObject=null; }
-    try{
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video:{ facingMode:{ ideal: camFacing } }, audio:false
-      });
-      camVideo.srcObject = stream;
-      camVideo.style.display = "block";
-      // mirror the front camera so it reads like a mirror, not backwards
-      camVideo.classList.toggle("mirror", camFacing === "user");
-      await camVideo.play().catch(()=>{});
-      return true;
-    }catch(err){
-      setStatus("Camera unavailable — showing it on a black background instead.");
-      return false;
-    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ ideal: camFacing } }, audio:false
+    });
+    camVideo.srcObject = stream;
+    camVideo.classList.toggle("mirror", camFacing === "user");
+    await camVideo.play().catch(()=>{});
   }
 
-  // Flip between rear and front cameras (magic-window mode only)
   let flipping = false;
   async function flipCamera(){
     if(flipping) return; flipping = true;
-    const next = camFacing === "environment" ? "user" : "environment";
-    const ok = await startCamera(next);
-    if(!ok){ setStatus("Couldn't switch camera."); }
+    try{ await startCamera(camFacing === "user" ? "environment" : "user"); }
+    catch(_){ /* keep current */ }
     flipping = false;
   }
 
-  // ================= PHOTO CAPTURE =================
-  let lastPhotoBlob = null;
-  // Draw the video with object-fit:cover math into ctx at (W,H), honoring mirror.
+  // ---------- launch ----------
+  async function launch(){
+    $("gateMsg").textContent = "Requesting camera…";
+    try{
+      await startCamera("user");
+      gate.classList.add("hide");
+    }catch(err){
+      $("gateMsg").textContent = "Couldn't open the camera. Check permissions and tap again.";
+    }
+  }
+
+  // ---------- photo capture (camera + frame overlay + motto) ----------
+  let lastBlob = null;
+
   function drawCover(ctx, video, W, H, mirror){
     const vw = video.videoWidth, vh = video.videoHeight;
-    if(!vw || !vh) return;
+    if(!vw || !vh){ ctx.fillStyle="#050505"; ctx.fillRect(0,0,W,H); return; }
     const scale = Math.max(W/vw, H/vh);
     const dw = vw*scale, dh = vh*scale;
     const dx = (W-dw)/2, dy = (H-dh)/2;
@@ -484,171 +220,78 @@
     ctx.restore();
   }
 
-  // Draw the "99% Science 1% Magic" logo along the bottom of a captured photo.
-  function drawWatermark(ctx, W, H){
-    const size = Math.round(H * 0.032);           // scales with photo resolution
-    const y = H - Math.round(H * 0.045);
+  // Composite the on-screen frame by mapping each DOM element's screen rect
+  // onto the output canvas — so the photo matches exactly what the user sees.
+  function drawFrame(ctx, W, H){
+    const sx = W / window.innerWidth, sy = H / window.innerHeight;
+    // title letters (drawn un-mirrored so text reads correctly)
+    document.querySelectorAll("#title img").forEach(img=>{
+      if(!img.complete || !img.naturalWidth) return;
+      const r = img.getBoundingClientRect();
+      ctx.drawImage(img, r.left*sx, r.top*sy, r.width*sx, r.height*sy);
+    });
+    // motto — redraw as two-tone text at the motto's on-screen position
+    const m = $("motto").getBoundingClientRect();
+    const fs = Math.round(m.height * sy * 0.82);
     ctx.save();
-    ctx.textAlign = "center";
-    ctx.textBaseline = "alphabetic";
-    ctx.font = `800 ${size}px "Baloo 2","Nunito",system-ui,sans-serif`;
-    // soft dark backing so it stays legible over any camera background
-    ctx.shadowColor = "rgba(0,0,0,.65)";
-    ctx.shadowBlur = size * 0.5;
-    ctx.shadowOffsetY = size * 0.08;
-    // build the two-tone line and center it as a whole
-    const partA = "99% Science ", partB = "1% Magic";
-    const wA = ctx.measureText(partA).width;
-    const wB = ctx.measureText(partB).width;
-    const startX = W/2 - (wA + wB)/2;
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#ffffff";                     // "99% Science " in white
-    ctx.fillText(partA, startX, y);
-    ctx.fillStyle = "#ff9ecb";                     // "1% Magic" in the theme pink
-    ctx.fillText(partB, startX + wA, y);
+    ctx.font = `800 ${fs}px "Baloo 2","Nunito",system-ui,sans-serif`;
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,.65)"; ctx.shadowBlur = fs*0.5; ctx.shadowOffsetY = fs*0.06;
+    const a = "99% Science ", b = "1% Magic";
+    const wA = ctx.measureText(a).width, wB = ctx.measureText(b).width;
+    const cx = (m.left + m.width/2) * sx;
+    const cy = (m.top + m.height/2) * sy;
+    let x = cx - (wA + wB)/2;
+    ctx.fillStyle = "#ffffff"; ctx.fillText(a, x, cy);
+    ctx.fillStyle = "#ff9ecb"; ctx.fillText(b, x + wA, cy);
     ctx.restore();
   }
 
   async function takePhoto(){
-    // force a fresh render so the WebGL buffer holds the current frame
-    renderer.render(scene, camera);
-    const W = renderer.domElement.width, H = renderer.domElement.height;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = Math.round(window.innerWidth * dpr);
+    const H = Math.round(window.innerHeight * dpr);
     const out = document.createElement("canvas");
     out.width = W; out.height = H;
     const ctx = out.getContext("2d");
-    // 1) camera feed (or the flat dark background) first
-    if(camVideo.style.display !== "none" && camVideo.videoWidth){
-      drawCover(ctx, camVideo, W, H, camVideo.classList.contains("mirror"));
-    }else{
-      ctx.fillStyle = "#050505"; ctx.fillRect(0,0,W,H);
-    }
-    // 2) the 3D balloon letters on top
-    ctx.drawImage(renderer.domElement, 0, 0, W, H);
-    // 3) the team logo watermark along the bottom
-    drawWatermark(ctx, W, H);
 
-    // shutter flash
+    drawCover(ctx, camVideo, W, H, camVideo.classList.contains("mirror"));
+    drawFrame(ctx, W, H);
+
     flash.classList.remove("fire"); void flash.offsetWidth; flash.classList.add("fire");
 
-    lastPhotoBlob = await new Promise(res => out.toBlob(res, "image/png"));
-    photoImg.src = URL.createObjectURL(lastPhotoBlob);
-    photoView.classList.add("show");
+    lastBlob = await new Promise(res => out.toBlob(res, "image/png"));
+    photoImg.src = URL.createObjectURL(lastBlob);
     $("photoHint").textContent = "";
+    photoView.classList.add("show");
   }
 
   async function sharePhoto(){
-    if(!lastPhotoBlob) return;
-    const file = new File([lastPhotoBlob], "amps-science-ar.png", { type:"image/png" });
-    // Prefer the native share sheet on mobile (lets them save to Photos / send it)
+    if(!lastBlob) return;
+    const file = new File([lastBlob], "amps-science-selfie.png", { type:"image/png" });
     if(navigator.canShare && navigator.canShare({ files:[file] })){
-      try{ await navigator.share({ files:[file], title:"AMPS Science AR" }); return; }
-      catch(_){ /* user cancelled — fall through to download */ }
+      try{ await navigator.share({ files:[file], title:"AMPS Science" }); return; }
+      catch(_){ /* cancelled -> fall through to download */ }
     }
-    // Fallback: trigger a download
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(lastPhotoBlob);
-    a.download = "amps-science-ar.png";
+    a.href = URL.createObjectURL(lastBlob);
+    a.download = "amps-science-selfie.png";
     document.body.appendChild(a); a.click(); a.remove();
     $("photoHint").textContent = "Saved to your downloads.";
   }
 
-  // ================= ALIAS PANEL =================
-  const aliasBtns = new Map();
-  (function buildNamePanel(){
-    names.forEach(n=>{
-      const b = document.createElement("button");
-      b.className = "aliasBtn"; b.textContent = n;
-      b.addEventListener("click", ()=>{
-        pinName(n);
-        aliasBtns.forEach((el,name)=> el.classList.toggle("active", name===n));
-        namePanel.classList.remove("open");
-      });
-      aliasBtns.set(n, b);
-      namegrid.appendChild(b);
-    });
-  })();
-  $("cycleBtn").addEventListener("click", ()=>{
-    cycleAll();
-    aliasBtns.forEach(el=> el.classList.remove("active"));
-    namePanel.classList.remove("open");
-  });
-
-  const startMagicOrFlatLoop = { stopped:false };
-  function loopMagic(now){
-    if(startMagicOrFlatLoop.stopped) return;
-    rig.quaternion.slerp(deviceQuat, 0.25); // smooth follow of the phone's pose
-    animate(now);
-    requestAnimationFrame(loopMagic);
-  }
-
-  async function startMagicWindow(){
-    world.position.set(0, 0, -2.2);
-    await startCamera("environment");
-    await enableOrientation();
-    ui.classList.add("hide"); exitBtn.classList.add("show"); flipBtn.classList.add("show");
-    controls.classList.add("show");
-    startMagicOrFlatLoop.stopped = false;
-    requestAnimationFrame(loopMagic);
-  }
-
-  // ================= MODE 3: flat "just watch" (no camera) =================
-  function startFlat(){
-    renderer.setClearColor(0x050505, 1);
-    world.position.set(0, 0, -2.2);
-    ui.classList.add("hide"); exitBtn.classList.add("show");
-    controls.classList.add("show");   // photo + names work here too (no camera)
-    startMagicOrFlatLoop.stopped = false;
-    (function loopFlat(now){
-      if(startMagicOrFlatLoop.stopped) return;
-      rig.quaternion.identity();
-      animate(now);
-      requestAnimationFrame(loopFlat);
-    })(performance.now());
-  }
-
-  function exitToMenu(){
-    startMagicOrFlatLoop.stopped = true;
-    if(renderer.xr.isPresenting){ renderer.xr.getSession()?.end(); }
+  function closeAll(){
     if(camVideo.srcObject){ camVideo.srcObject.getTracks().forEach(t=>t.stop()); camVideo.srcObject=null; }
-    camVideo.style.display="none";
-    camVideo.classList.remove("mirror");
-    camFacing = "environment";
-    renderer.setClearColor(0x000000, 0);
-    exitBtn.classList.remove("show"); flipBtn.classList.remove("show");
-    controls.classList.remove("show"); namePanel.classList.remove("open");
     photoView.classList.remove("show");
-    ui.classList.remove("hide");
-    setStatus("");
+    gate.classList.remove("hide");
+    $("gateMsg").textContent = "";
   }
 
-  // ---------- wire up buttons + feature detection ----------
-  let xrSupported = false;
-  (async function init(){
-    setStatus("Loading balloon letters…");
-    await buildStaticContent();
-    showName(names[0]); reshuffle();
-    setStatus("");
-    if(navigator.xr && navigator.xr.isSessionSupported){
-      try{ xrSupported = await navigator.xr.isSessionSupported("immersive-ar"); }catch(_){ }
-    }
-    $("lede").textContent = xrSupported
-      ? "Your phone supports full AR. Tap Start AR to place the team's floating balloon names right in your room."
-      : "Point your phone around and the team's balloon names will float in the space in front of you.";
-    $("startBtn").textContent = xrSupported ? "Start AR (immersive)" : "Start AR view";
-  })();
-
-  $("startBtn").addEventListener("click", ()=>{
-    if(xrSupported) startXR();
-    else startMagicWindow();
-  });
-  $("flatBtn").addEventListener("click", startFlat);
-  exitBtn.addEventListener("click", exitToMenu);
-  flipBtn.addEventListener("click", flipCamera);
-
-  // photo + names controls
-  $("shotBtn").addEventListener("click", takePhoto);
-  $("namesBtn").addEventListener("click", ()=> namePanel.classList.toggle("open"));
-  $("panelClose").addEventListener("click", ()=> namePanel.classList.remove("open"));
+  // ---------- wire up ----------
+  $("startBtn").addEventListener("click", launch);
+  $("flip").addEventListener("click", flipCamera);
+  $("shot").addEventListener("click", takePhoto);
+  $("close").addEventListener("click", closeAll);
   $("photoShare").addEventListener("click", sharePhoto);
   $("photoClose").addEventListener("click", ()=> photoView.classList.remove("show"));
 })();
