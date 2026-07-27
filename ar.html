@@ -32,22 +32,34 @@
   }
   #title .word{ display:flex; align-items:flex-end; justify-content:center; }
   #title .word img{ display:block; height:100%; width:auto; margin:0 -0.6vw; }
-  #title .word.amps{ height: clamp(34px, 10vw, 84px); }
-  #title .word.science{ height: clamp(26px, 7.6vw, 64px); }
+  #title .word.amps{ height: clamp(52px, 15vw, 128px); }
+  #title .word.science{ height: clamp(40px, 11.5vw, 98px); }
   @keyframes floaty{
     0%,100%{ transform: translateY(0) rotate(-.5deg); }
     50%    { transform: translateY(-10px) rotate(.5deg); }
   }
 
-  /* ---- motto pinned to the bottom ---- */
+  /* ---- motto pinned to the bottom: "99%" + balloon SCIENCE + "1%" + balloon MAGIC ---- */
   #motto{
-    font-family:"Baloo 2","Nunito",system-ui,sans-serif;
-    font-weight:800; letter-spacing:.02em;
-    font-size: clamp(17px, 5.4vw, 34px);
-    text-shadow:0 2px 10px rgba(0,0,0,.65), 0 0 20px rgba(0,0,0,.5);
+    display:flex; align-items:flex-end; justify-content:center; flex-wrap:wrap;
+    gap: 0 1.4vw;
+    filter: drop-shadow(0 6px 10px rgba(0,0,0,.55));
+    animation: floaty 5s ease-in-out infinite;
   }
-  #motto .sci{ color:#ffffff; }
-  #motto .magic{ color:#ff9ecb; }
+  /* the balloon words reuse the same letter PNGs as the title */
+  #motto .word{ display:flex; align-items:flex-end; justify-content:center; }
+  #motto .word img{ display:block; height:100%; width:auto; margin:0 -0.5vw; }
+  #motto .word{ height: clamp(22px, 6.2vw, 52px); }
+  /* the digits/% that have no balloon art, styled to sit alongside */
+  #motto .pct{
+    font-family:"Baloo 2","Nunito",system-ui,sans-serif;
+    font-weight:800; line-height:0.95;
+    font-size: clamp(20px, 5.6vw, 48px);
+    text-shadow:0 2px 10px rgba(0,0,0,.65), 0 0 20px rgba(0,0,0,.5);
+    align-self:flex-end;
+  }
+  #motto .pct.white{ color:#ffffff; }
+  #motto .pct.pink{ color:#ff9ecb; }
 
   /* ---- bottom controls ---- */
   #controls{
@@ -120,7 +132,12 @@
       <div class="word amps" id="w1"></div>
       <div class="word science" id="w2"></div>
     </div>
-    <div id="motto"><span class="sci">99% Science </span><span class="magic">1% Magic</span></div>
+    <div id="motto">
+      <span class="pct white">99%</span>
+      <div class="word" id="mSci"></div>
+      <span class="pct pink">1%</span>
+      <div class="word" id="mMagic"></div>
+    </div>
   </div>
 
   <!-- controls -->
@@ -172,6 +189,9 @@
   }
   buildWord($("w1"), "AMPS");
   buildWord($("w2"), "SCIENCE");
+  // motto balloon words (digits/% are plain styled text in the markup)
+  buildWord($("mSci"), "SCIENCE");
+  buildWord($("mMagic"), "MAGIC");
 
   // ---------- camera ----------
   let camFacing = "user";   // start in selfie (front) mode
@@ -224,27 +244,28 @@
   // onto the output canvas — so the photo matches exactly what the user sees.
   function drawFrame(ctx, W, H){
     const sx = W / window.innerWidth, sy = H / window.innerHeight;
-    // title letters (drawn un-mirrored so text reads correctly)
-    document.querySelectorAll("#title img").forEach(img=>{
+    // All balloon letters in the frame (title + motto words), drawn un-mirrored
+    // by their on-screen position so the photo matches what's displayed.
+    document.querySelectorAll("#frame img").forEach(img=>{
       if(!img.complete || !img.naturalWidth) return;
       const r = img.getBoundingClientRect();
+      if(r.width <= 0 || r.height <= 0) return;
       ctx.drawImage(img, r.left*sx, r.top*sy, r.width*sx, r.height*sy);
     });
-    // motto — redraw as two-tone text at the motto's on-screen position
-    const m = $("motto").getBoundingClientRect();
-    const fs = Math.round(m.height * sy * 0.82);
-    ctx.save();
-    ctx.font = `800 ${fs}px "Baloo 2","Nunito",system-ui,sans-serif`;
-    ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    ctx.shadowColor = "rgba(0,0,0,.65)"; ctx.shadowBlur = fs*0.5; ctx.shadowOffsetY = fs*0.06;
-    const a = "99% Science ", b = "1% Magic";
-    const wA = ctx.measureText(a).width, wB = ctx.measureText(b).width;
-    const cx = (m.left + m.width/2) * sx;
-    const cy = (m.top + m.height/2) * sy;
-    let x = cx - (wA + wB)/2;
-    ctx.fillStyle = "#ffffff"; ctx.fillText(a, x, cy);
-    ctx.fillStyle = "#ff9ecb"; ctx.fillText(b, x + wA, cy);
-    ctx.restore();
+    // The "99%" / "1%" text spans (no balloon art) — draw at their positions.
+    document.querySelectorAll("#motto .pct").forEach(span=>{
+      const r = span.getBoundingClientRect();
+      const fs = Math.round(r.height * sy * 0.82);
+      ctx.save();
+      ctx.font = `800 ${fs}px "Baloo 2","Nunito",system-ui,sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      ctx.shadowColor = "rgba(0,0,0,.65)"; ctx.shadowBlur = fs*0.5; ctx.shadowOffsetY = fs*0.06;
+      ctx.fillStyle = span.classList.contains("pink") ? "#ff9ecb" : "#ffffff";
+      const cx = (r.left + r.width/2) * sx;
+      const baseY = (r.bottom - r.height*0.12) * sy;   // approx text baseline
+      ctx.fillText(span.textContent, cx, baseY);
+      ctx.restore();
+    });
   }
 
   async function takePhoto(){
