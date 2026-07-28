@@ -123,6 +123,38 @@
   }
   .rlogo .word{ height: clamp(38px, 9vw, 78px); }
   .rlogo .word img{ margin: 0 -0.6vw; display:block; height:100%; width:auto; }
+
+  /* ---- Executive Team section (sits above the main roster grid) ---- */
+  .execwrap{
+    display:flex; flex-direction:column; align-items:center; gap: 1vh;
+    width:100%;
+  }
+  .execlabel{
+    font-family:"Baloo 2","Nunito",system-ui,sans-serif;
+    font-weight:800; letter-spacing:.18em; text-transform:uppercase;
+    font-size: clamp(11px, 3vw, 16px);
+    color:#ffd6ea;
+    display:flex; align-items:center; gap:10px;
+  }
+  /* little pink dividers flanking the label */
+  .execlabel::before, .execlabel::after{
+    content:""; height:2px; width: clamp(22px, 8vw, 54px);
+    background:linear-gradient(90deg, rgba(255,158,203,0), rgba(255,158,203,.9));
+    border-radius:2px;
+  }
+  .execlabel::after{ transform:rotate(180deg); }
+  .execgrid{
+    display:flex; justify-content:center; align-items:flex-end;
+    gap: 6vw; flex-wrap:wrap;
+  }
+  /* exec names float like the roster names, sized a touch larger */
+  .execgrid .rname{ --rh: clamp(30px, 8vw, 62px); }
+  /* thin separator under the exec section */
+  .execdiv{
+    width: min(60%, 340px); height:2px; border-radius:2px;
+    background:linear-gradient(90deg, rgba(255,158,203,0), rgba(255,158,203,.5), rgba(255,158,203,0));
+    margin: 0.4vh 0 0.6vh;
+  }
   .rgrid{
     display:grid;
     grid-template-columns: 1fr 1fr;      /* two columns */
@@ -135,7 +167,9 @@
   }
   /* hold all roster animations until images are ready, then release in sync */
   .rgrid.paused .rname,
-  .rgrid.paused .rname img{ animation-play-state: paused; }
+  .rgrid.paused .rname img,
+  .execgrid.paused .rname,
+  .execgrid.paused .rname img{ animation-play-state: paused; }
   .rname{
     display:flex; align-items:flex-end; justify-content:center;
     height: var(--rh, 34px);             /* set by JS to fit */
@@ -225,6 +259,12 @@
       <div class="word" id="rw1"></div>
       <div class="word" id="rw2"></div>
     </div>
+    <!-- Executive team, called out above the main roster -->
+    <div class="execwrap" id="execwrap">
+      <div class="execlabel">Executive Team</div>
+      <div class="execgrid paused" id="execgrid"></div>
+      <div class="execdiv"></div>
+    </div>
     <div class="rgrid paused" id="rgrid"></div>
   </div>
 
@@ -250,6 +290,7 @@
     "mozadeh","rninad","pstudans","rpothen","rzmiao","devadula",
     "saniaki","ssamaga","khatrivi"
   ];
+  const execs = ["benjamwy","myan"];   // executive team, shown above the roster
 
   // ---- timing (ms) ----
   const RISE_DUR    = 3800;   // slow, floaty rise per letter (balloon drift)
@@ -399,6 +440,7 @@
   // ---- ROSTER SPLASH (two columns, all names, gentle float) ----
   const rosterSplash = document.getElementById("rosterSplash");
   const rgrid = document.getElementById("rgrid");
+  const execgrid = document.getElementById("execgrid");
   // roster must stay up long enough for the last name to finish rising:
   // last name starts ~ 20*0.35s=7s, + 1.4s spread + 3.2s rise ≈ 11.6s, then linger
   const SPLASH_HOLD = 27000;  // ms the roster stays before fading into the show
@@ -411,25 +453,34 @@
   document.getElementById("rw1").appendChild(buildWord("AMPS"));
   document.getElementById("rw2").appendChild(buildWord("SCIENCE"));
 
+  // Build a floating name row into a grid, with rise delays offset by `startAt`
+  // seconds so sections can rise in sequence (execs first, then the roster).
+  function buildNameRow(grid, name, indexInSection, startAt){
+    const el=document.createElement("div");
+    el.className="rname";
+    el.appendChild(buildWord(name));
+    const letters=[...el.querySelectorAll("img")];
+    const nameStart = startAt + indexInSection*ROW_STAGGER;
+    letters.forEach(img=>{
+      const d = nameStart + Math.random()*LETTER_SPREAD;   // random per letter
+      img.style.setProperty("--riseDelay", d.toFixed(2)+"s");
+    });
+    // bob starts after the whole name could be up (worst-case last letter)
+    const bobStart = nameStart + LETTER_SPREAD + RISE_LEN;
+    el.style.setProperty("--bobDelay", bobStart.toFixed(2)+"s");
+    grid.appendChild(el);
+  }
+
+  // Executives rise first (they sit on top), then the roster follows.
+  (function buildExec(){
+    execs.forEach((n,i)=> buildNameRow(execgrid, n, i, 0));
+  })();
+  const EXEC_LEAD = execs.length*ROW_STAGGER + 0.4;   // roster starts after execs
   (function buildRoster(){
     // Names begin in reading order, but WITHIN each name the letters rise in
     // RANDOM order with random delays — like the single-name animation — so it
     // drifts up organically instead of sweeping left-to-right.
-    names.forEach((n,i)=>{
-      const el=document.createElement("div");
-      el.className="rname";
-      el.appendChild(buildWord(n));
-      const letters=[...el.querySelectorAll("img")];
-      const nameStart = i*ROW_STAGGER;
-      letters.forEach(img=>{
-        const d = nameStart + Math.random()*LETTER_SPREAD;   // random per letter
-        img.style.setProperty("--riseDelay", d.toFixed(2)+"s");
-      });
-      // bob starts after the whole name could be up (worst-case last letter)
-      const bobStart = nameStart + LETTER_SPREAD + RISE_LEN;
-      el.style.setProperty("--bobDelay", bobStart.toFixed(2)+"s");
-      rgrid.appendChild(el);
-    });
+    names.forEach((n,i)=> buildNameRow(rgrid, n, i, EXEC_LEAD));
   })();
 
   // Size roster names so the tallest column fits the screen height, and no
@@ -437,17 +488,26 @@
   function fitRoster(){
     const rows = Math.ceil(names.length/2);
     const vh = window.innerHeight;
-    // subtract the balloon logo's actual height, then divide the rest by rows
+    // subtract the logo AND the exec section, then divide the rest by rows
     const logoH = document.getElementById("rlogo").offsetHeight || vh*0.14;
-    const avail = vh - logoH - vh*0.10;              // logo + paddings
+    const execH = document.getElementById("execwrap").offsetHeight || 0;
+    const avail = vh - logoH - execH - vh*0.12;      // logo + exec + paddings
     const perRow = avail / rows;
-    let h = Math.max(18, Math.floor(perRow*0.80));   // name height per row
+    let h = Math.max(16, Math.floor(perRow*0.80));   // name height per row
     // width guard: measure widest name at this height, shrink if needed
     const colW = Math.min(560, rgrid.clientWidth)/2 - 12;
     const rnames=[...rgrid.querySelectorAll(".rname")];
     rnames.forEach(el=> el.style.setProperty("--rh", h+"px"));
     let maxW=0; rnames.forEach(el=>{ if(el.scrollWidth>maxW) maxW=el.scrollWidth; });
     if(maxW>colW){ h=Math.floor(h*colW/maxW); rnames.forEach(el=> el.style.setProperty("--rh", h+"px")); }
+
+    // size exec names a touch larger, but keep them within the screen width
+    const execEls=[...execgrid.querySelectorAll(".rname")];
+    let eh = Math.max(h, Math.floor(perRow*1.0));
+    const execColW = Math.min(560, execgrid.clientWidth)/2 - 12;
+    execEls.forEach(el=> el.style.setProperty("--rh", eh+"px"));
+    let emax=0; execEls.forEach(el=>{ if(el.scrollWidth>emax) emax=el.scrollWidth; });
+    if(emax>execColW){ eh=Math.floor(eh*execColW/emax); execEls.forEach(el=> el.style.setProperty("--rh", eh+"px")); }
   }
 
   // wait for the letter images to load — but NEVER hang (timeout guard)
@@ -469,6 +529,7 @@
     // release the paused rise animations now that images are ready, so the
     // letter-rise and the SPLASH_HOLD timer below start together.
     rgrid.classList.remove("paused");
+    execgrid.classList.remove("paused");
 
     // prep the cycling show in the background
     await whenLoadedSafe(nameImgs);
