@@ -143,6 +143,8 @@
     border-radius:2px;
   }
   .execlabel::after{ transform:rotate(180deg); }
+  /* Science Team label reuses the exec label styling, with a little breathing room */
+  .scilabel{ margin-bottom: 0.4vh; }
   .execgrid{
     display:flex; justify-content:center; align-items:flex-end;
     gap: 6vw; flex-wrap:wrap;
@@ -265,6 +267,8 @@
       <div class="execgrid paused" id="execgrid"></div>
       <div class="execdiv"></div>
     </div>
+    <!-- Science team label above the roster grid -->
+    <div class="execlabel scilabel">Science Team</div>
     <div class="rgrid paused" id="rgrid"></div>
   </div>
 
@@ -491,7 +495,9 @@
     // subtract the logo AND the exec section, then divide the rest by rows
     const logoH = document.getElementById("rlogo").offsetHeight || vh*0.14;
     const execH = document.getElementById("execwrap").offsetHeight || 0;
-    const avail = vh - logoH - execH - vh*0.12;      // logo + exec + paddings
+    const sciLabel = document.querySelector(".scilabel");
+    const sciH = sciLabel ? sciLabel.offsetHeight : 0;
+    const avail = vh - logoH - execH - sciH - vh*0.12;   // logo + exec + sci label + paddings
     const perRow = avail / rows;
     let h = Math.max(16, Math.floor(perRow*0.80));   // name height per row
     // width guard: measure widest name at this height, shrink if needed
