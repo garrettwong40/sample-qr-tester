@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AMPS Science — Menu</title>
+<link rel="preload" as="image" href="img/amps_science_sign.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- Alfa Slab One = fat retro slab for course headers; Archivo Black = chunky
+     grotesque for the roster rows. Both degrade to Impact/system sans. -->
+<link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Archivo+Black&display=swap" rel="stylesheet" />
+<style>
+  /* Palette sampled straight off the sticker art so the page and the
+     printed sticker are the same three colors. */
+  :root{
+    --cream:  #fff6ec;
+    --red:    #ff1a00;
+    --yellow: #fdd921;
+    --ink:    #1a0f06;
+  }
+
+  *{ margin:0; padding:0; box-sizing:border-box; }
+
+  body{
+    background: var(--cream);
+    color: var(--red);
+    font-family: "Archivo Black", "Helvetica Neue", Impact, system-ui, sans-serif;
+    min-height:100dvh;
+    padding: clamp(14px, 4vw, 34px) clamp(12px, 4vw, 28px) 8vh;
+    /* faint diner-tablecloth texture: two red hairlines on the cream */
+    background-image:
+      repeating-linear-gradient(0deg,  rgba(255,26,0,.045) 0 1px, transparent 1px 22px),
+      repeating-linear-gradient(90deg, rgba(255,26,0,.045) 0 1px, transparent 1px 22px);
+  }
+
+  .board{
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  /* ---------------- SIGN (the sticker art itself) ---------------- */
+  .sign{
+    display:block;
+    width:100%;
+    max-width: 560px;
+    height:auto;
+    margin: 0 auto clamp(10px, 2.4vw, 20px);
+    animation: sway 5s ease-in-out infinite;
+  }
+  @keyframes sway{
+    0%,100%{ transform: translateY(0)     rotate(-.6deg); }
+    50%    { transform: translateY(-9px)  rotate(.6deg); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .sign{ animation:none; }
+  }
+
+  /* ---------------- EST. RIBBON ---------------- */
+  .ribbon{
+    background: var(--red);
+    color: var(--yellow);
+    text-align:center;
+    letter-spacing:.22em;
+    font-size: clamp(10px, 2.5vw, 14px);
+    padding: 8px 10px;
+    border-radius: 999px;
+    margin-bottom: clamp(18px, 4vw, 30px);
+    box-shadow: 0 4px 0 rgba(0,0,0,.18);
+  }
+
+  /* ---------------- MENU SECTIONS ---------------- */
+  .course{ margin-bottom: clamp(26px, 6vw, 44px); }
+
+  /* Section header: yellow plate with a red rule, like a menu course */
+  .course-head{
+    background: var(--yellow);
+    border: 3px solid var(--red);
+    border-radius: 14px;
+    padding: clamp(9px, 2.4vw, 14px) 16px;
+    text-align:center;
+    box-shadow: 0 5px 0 var(--red);
+    margin-bottom: clamp(14px, 3vw, 22px);
+  }
+  .course-head h2{
+    font-family: "Alfa Slab One", Georgia, Impact, serif;
+    font-weight: 400;
+    font-size: clamp(20px, 6.4vw, 38px);
+    line-height:1;
+    letter-spacing:.02em;
+    text-transform:uppercase;
+    /* chunky retro double-shadow */
+    text-shadow: 2px 2px 0 var(--cream), 4px 4px 0 rgba(0,0,0,.22);
+  }
+  .course-head .sub{
+    display:block;
+    margin-top:6px;
+    font-size: clamp(9px, 2.3vw, 12px);
+    letter-spacing:.18em;
+    color: var(--red);
+    opacity:.85;
+  }
+
+  /* ---------------- ITEM ROWS (dot leaders) ---------------- */
+  ol.items{ list-style:none; }
+
+  .item{
+    display:flex;
+    align-items:flex-end;
+    gap: 8px;
+    padding: clamp(7px, 1.8vw, 11px) 2px;
+  }
+  .item + .item{ border-top: 2px dotted rgba(255,26,0,.28); }
+
+  .num{
+    flex: 0 0 auto;
+    background: var(--red);
+    color: var(--yellow);
+    font-size: clamp(10px, 2.4vw, 13px);
+    min-width: 2.1em;
+    text-align:center;
+    padding: 3px 5px;
+    border-radius: 6px;
+  }
+
+  .name{
+    flex: 0 1 auto;
+    font-size: clamp(15px, 4.4vw, 26px);
+    line-height:1.05;
+    text-transform: uppercase;
+    letter-spacing:.01em;
+    word-break: break-word;
+  }
+
+  /* the classic menu dot leader that stretches to fill the row */
+  .dots{
+    flex: 1 1 auto;
+    min-width: 12px;
+    border-bottom: 3px dotted rgba(255,26,0,.42);
+    transform: translateY(-.32em);
+  }
+
+  /* "price" column — plays the joke straight, in diner-menu form */
+  .price{
+    flex: 0 0 auto;
+    font-size: clamp(12px, 3vw, 17px);
+    color: var(--red);
+    white-space: nowrap;
+  }
+
+  /* ---------------- FOOTER STARBURST ---------------- */
+  .footer{
+    text-align:center;
+    margin-top: clamp(22px, 5vw, 38px);
+  }
+  .burst{
+    /* Grid-center the text so the spikes grow outward from it: the clip-path
+       eats the outer ~18% on each axis, so the padding must clear that or the
+       words get sliced. */
+    /* inline-grid, not grid — a block-level burst would stretch to the full
+       footer width and the spikes would flatten out. */
+    display:inline-grid;
+    place-content:center;
+    width:  clamp(200px, 48vw, 260px);
+    height: clamp(200px, 48vw, 260px);
+    background: var(--red);
+    color: var(--yellow);
+    padding: 54px 48px;
+    font-size: clamp(13px, 3.4vw, 19px);
+    line-height:1.4;
+    letter-spacing:.06em;
+    /* 16-point starburst, same spirit as the sticker's BEST IN THE TOWN badge */
+    clip-path: polygon(
+      50% 0%, 57% 8%, 65% 3%, 68% 12%, 78% 9%, 78% 19%, 88% 18%, 85% 27%,
+      95% 29%, 89% 37%, 99% 42%, 91% 48%, 100% 55%, 90% 59%, 97% 68%,
+      86% 69%, 90% 79%, 79% 77%, 79% 87%, 70% 83%, 66% 93%, 58% 87%,
+      50% 100%, 42% 87%, 34% 93%, 30% 83%, 21% 87%, 21% 77%, 10% 79%,
+      14% 69%, 3% 68%, 10% 59%, 0% 55%, 9% 48%, 1% 42%, 11% 37%,
+      5% 29%, 15% 27%, 12% 18%, 22% 19%, 22% 9%, 32% 12%, 35% 3%, 43% 8%
+    );
+    animation: pulse 3.2s ease-in-out infinite;
+  }
+  @keyframes pulse{
+    0%,100%{ transform: scale(1)    rotate(-2deg); }
+    50%    { transform: scale(1.05) rotate(2deg); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .burst{ animation:none; }
+  }
+
+  .smallprint{
+    margin-top: 16px;
+    font-size: clamp(9px, 2.2vw, 11px);
+    letter-spacing:.14em;
+    opacity:.7;
+  }
+  .smallprint a{ color: var(--red); }
+</style>
+</head>
+<body>
+
+<main class="board">
+
+  <!-- The sticker art doubles as the restaurant sign: wordmark, chef,
+       BEST IN THE TOWN badge and the 99%/1% motto are all in the image. -->
+  <img class="sign" src="img/amps_science_sign.png"
+       alt="AMPS Science — Best in the Town — 99% Science 1% Magic" />
+
+  <div class="ribbon">EST. 2026 &nbsp;&middot;&nbsp; SERVED FRESH DAILY &nbsp;&middot;&nbsp; NO SUBSTITUTIONS</div>
+
+  <!-- ============ COURSE 1: EXECUTIVE TEAM ============ -->
+  <section class="course">
+    <div class="course-head">
+      <h2>The Executive Team</h2>
+      <span class="sub">HOUSE SPECIALS &nbsp;&middot;&nbsp; PREPARED BY THE OWNERS</span>
+    </div>
+    <ol class="items" id="execList"></ol>
+  </section>
+
+  <!-- ============ COURSE 2: SCIENCE TEAM ============ -->
+  <section class="course">
+    <div class="course-head">
+      <h2>The Science Team</h2>
+      <span class="sub">ALL YOU CAN EAT &nbsp;&middot;&nbsp; MADE TO ORDER</span>
+    </div>
+    <ol class="items" id="scienceList"></ol>
+  </section>
+
+  <div class="footer">
+    <div class="burst">99% SCIENCE<br />1% MAGIC</div>
+    <p class="smallprint">
+      THANK YOU &mdash; PLEASE COME AGAIN &nbsp;&middot;&nbsp;
+      <a href="index.html">SEE THE BALLOON SHOW &rarr;</a>
+    </p>
+  </div>
+
+</main>
+
+<script>
+  /* ------------------------------------------------------------------
+     THE ROSTER — edit these two arrays and the menu rebuilds itself.
+     ------------------------------------------------------------------ */
+  const EXEC = ["benjamwy", "myan"];
+
+  const SCIENCE = [
+    "alexijia","amdhanda","achanish","boopalb","bverkhov","nevina",
+    "elcimren","gcwong","jmanas","kriswpan","kynovak","meisamhe",
+    "mozadeh","rninad","pstudans","rpothen","rzmiao","devadula",
+    "saniaki","ssamaga","khatrivi"
+  ];
+
+  /* Diner-menu "prices". Cycled positionally so every row gets one without
+     pinning a specific joke to a specific person. */
+  const EXEC_PRICES    = ["MKT PRICE", "ASK YOUR SERVER"];
+  const SCIENCE_PRICES = ["$0.99", "2 FOR 1", "MKT PRICE", "$1.01", "FREE REFILLS", "$0.01"];
+
+  function render(listEl, aliases, prices, startNum){
+    listEl.innerHTML = "";
+    aliases.forEach((alias, i) => {
+      const li = document.createElement("li");
+      li.className = "item";
+
+      const num = document.createElement("span");
+      num.className = "num";
+      // zero-padded menu item numbers: 01, 02, ...
+      num.textContent = String(startNum + i).padStart(2, "0");
+
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = alias;
+
+      const dots = document.createElement("span");
+      dots.className = "dots";
+
+      const price = document.createElement("span");
+      price.className = "price";
+      price.textContent = prices[i % prices.length];
+
+      li.append(num, name, dots, price);
+      listEl.appendChild(li);
+    });
+  }
+
+  render(document.getElementById("execList"),    EXEC,    EXEC_PRICES,    1);
+  render(document.getElementById("scienceList"), SCIENCE, SCIENCE_PRICES, EXEC.length + 1);
+</script>
+
+</body>
+</html>
