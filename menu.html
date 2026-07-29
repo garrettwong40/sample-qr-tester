@@ -140,6 +140,36 @@
     transform: translateY(-.32em);
   }
 
+  /* ---------------- TWO-COLUMN LIST (science team) ----------------
+     CSS multi-column so the numbers read DOWN the left column and continue
+     down the right one, like a real menu — not left-right zigzag.
+     The row separators are dropped here: with two columns the top border
+     would land awkwardly on the first item of column two, and the dot
+     leaders already give each row its horizontal rhythm. */
+  ol.items.two-col{
+    columns: 2;
+    column-gap: clamp(16px, 4vw, 40px);
+    column-fill: balance;
+  }
+  ol.items.two-col .item{
+    break-inside: avoid;          /* never split a name across columns */
+    border-top: none;
+  }
+  ol.items.two-col .name{
+    font-size: clamp(13px, 3vw, 21px);   /* a touch smaller: half the width */
+  }
+  ol.items.two-col .num{
+    font-size: clamp(9px, 2vw, 12px);
+    min-width: 1.9em;
+  }
+
+  /* Below this width two columns get too cramped for the longer aliases,
+     so fall back to a single column. */
+  @media (max-width: 430px){
+    ol.items.two-col{ columns: 1; }
+    ol.items.two-col .name{ font-size: clamp(15px, 4.4vw, 26px); }
+  }
+
   /* ---------------- FOOTER STARBURST ---------------- */
   .footer{
     text-align:center;
@@ -215,7 +245,7 @@
       <h2>The Science Team</h2>
       <span class="sub">ALL YOU CAN EAT &nbsp;&middot;&nbsp; MADE TO ORDER</span>
     </div>
-    <ol class="items" id="scienceList"></ol>
+    <ol class="items two-col" id="scienceList"></ol>
   </section>
 
   <div class="footer">
