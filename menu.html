@@ -132,20 +132,12 @@
     word-break: break-word;
   }
 
-  /* the classic menu dot leader that stretches to fill the row */
+  /* the classic menu dot leader, now running out to the right edge */
   .dots{
     flex: 1 1 auto;
     min-width: 12px;
     border-bottom: 3px dotted rgba(255,26,0,.42);
     transform: translateY(-.32em);
-  }
-
-  /* "price" column — plays the joke straight, in diner-menu form */
-  .price{
-    flex: 0 0 auto;
-    font-size: clamp(12px, 3vw, 17px);
-    color: var(--red);
-    white-space: nowrap;
   }
 
   /* ---------------- FOOTER STARBURST ---------------- */
@@ -206,7 +198,7 @@
   <img class="sign" src="img/amps_science_sign.png"
        alt="AMPS Science — Best in the Town — 99% Science 1% Magic" />
 
-  <div class="ribbon">EST. 2026 &nbsp;&middot;&nbsp; SERVED FRESH DAILY &nbsp;&middot;&nbsp; NO SUBSTITUTIONS</div>
+  <div class="ribbon">EST. 2025 &nbsp;&middot;&nbsp; SERVED FRESH DAILY &nbsp;&middot;&nbsp; NO SUBSTITUTIONS</div>
 
   <!-- ============ COURSE 1: EXECUTIVE TEAM ============ -->
   <section class="course">
@@ -228,10 +220,7 @@
 
   <div class="footer">
     <div class="burst">99% SCIENCE<br />1% MAGIC</div>
-    <p class="smallprint">
-      THANK YOU &mdash; PLEASE COME AGAIN &nbsp;&middot;&nbsp;
-      <a href="index.html">SEE THE BALLOON SHOW &rarr;</a>
-    </p>
+    <p class="smallprint">THANK YOU &mdash; PLEASE COME AGAIN</p>
   </div>
 
 </main>
@@ -249,12 +238,7 @@
     "saniaki","ssamaga","khatrivi"
   ];
 
-  /* Diner-menu "prices". Cycled positionally so every row gets one without
-     pinning a specific joke to a specific person. */
-  const EXEC_PRICES    = ["MKT PRICE", "ASK YOUR SERVER"];
-  const SCIENCE_PRICES = ["$0.99", "2 FOR 1", "MKT PRICE", "$1.01", "FREE REFILLS", "$0.01"];
-
-  function render(listEl, aliases, prices, startNum){
+  function render(listEl, aliases, startNum){
     listEl.innerHTML = "";
     aliases.forEach((alias, i) => {
       const li = document.createElement("li");
@@ -272,17 +256,13 @@
       const dots = document.createElement("span");
       dots.className = "dots";
 
-      const price = document.createElement("span");
-      price.className = "price";
-      price.textContent = prices[i % prices.length];
-
-      li.append(num, name, dots, price);
+      li.append(num, name, dots);
       listEl.appendChild(li);
     });
   }
 
-  render(document.getElementById("execList"),    EXEC,    EXEC_PRICES,    1);
-  render(document.getElementById("scienceList"), SCIENCE, SCIENCE_PRICES, EXEC.length + 1);
+  render(document.getElementById("execList"),    EXEC,    1);
+  render(document.getElementById("scienceList"), SCIENCE, EXEC.length + 1);
 </script>
 
 </body>
