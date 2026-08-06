@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>AMPS Science — Photo Booth</title>
+<link rel="preload" as="image" href="img/amps_science_sign_cut.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Archivo+Black&display=swap" rel="stylesheet" />
+<style>
+  /* Same three colors as menu.html and the printed sticker. */
+  :root{
+    --cream:  #fff6ec;
+    --red:    #ff1a00;
+    --yellow: #fdd921;
+  }
+
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; overflow:hidden; background:#000; }
+  body{
+    font-family:"Archivo Black","Helvetica Neue",Impact,system-ui,sans-serif;
+    color:var(--cream);
+  }
+
+  /* ---------------- live camera ---------------- */
+  #cam{
+    position:fixed; inset:0; width:100%; height:100%;
+    object-fit:cover; z-index:0; background:#000;
+  }
+  #cam.mirror{ transform:scaleX(-1); }   /* selfie reads like a mirror */
+
+  /* ---------------- the frame (what ends up in the photo) ----------------
+     A cream placemat border with a red dotted inner rule, the sticker sign
+     pinned top and the diner ribbon pinned bottom — so whoever is in shot
+     sits in the clear middle. Every piece here is redrawn onto the capture
+     canvas in drawFrame(), so the photo matches the preview. */
+  #frame{
+    position:fixed; inset:0; z-index:1;
+    display:flex; flex-direction:column; align-items:center; justify-content:space-between;
+    padding: calc(14px + env(safe-area-inset-top)) 20px calc(150px + env(safe-area-inset-bottom));
+    pointer-events:none;
+  }
+
+  #border{
+    position:fixed; inset:0; z-index:1; pointer-events:none;
+    border: 10px solid var(--cream);
+  }
+  #border::after{
+    content:""; position:absolute; inset:3px;
+    border: 2px dotted rgba(255,26,0,.75);
+  }
+
+  #sign{
+    display:block; width:min(58vw, 260px); height:auto;
+    filter: drop-shadow(0 6px 12px rgba(0,0,0,.45));
+    animation: sway 5s ease-in-out infinite;
+  }
+  @keyframes sway{
+    0%,100%{ transform: translateY(0)    rotate(-.6deg); }
+    50%    { transform: translateY(-8px) rotate(.6deg); }
+  }
+
+  #ribbon{
+    background:var(--red); color:var(--yellow);
+    text-align:center; letter-spacing:.16em;
+    font-size: clamp(9px, 2.6vw, 13px);
+    padding: 9px 16px; border-radius:999px;
+    box-shadow:0 4px 0 rgba(0,0,0,.25);
+    white-space:nowrap;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    #sign{ animation:none; }
+  }
+
+  /* ---------------- look picker ---------------- */
+  #looks{
+    position:fixed; left:0; right:0; z-index:3;
+    bottom:calc(108px + env(safe-area-inset-bottom));
+    display:flex; gap:8px; justify-content:center; flex-wrap:wrap;
+    padding:0 16px;
+  }
+  .look{
+    appearance:none; cursor:pointer;
+    font-family:inherit; font-size:11px; letter-spacing:.1em;
+    padding:8px 13px; border-radius:999px;
+    color:var(--cream); background:rgba(0,0,0,.5);
+    border:2px solid rgba(255,246,236,.45);
+    backdrop-filter:blur(6px);
+  }
+  .look.on{
+    background:var(--yellow); color:var(--red);
+    border-color:var(--red);
+  }
+
+  /* ---------------- shutter row ---------------- */
+  #controls{
+    position:fixed; left:0; right:0; z-index:3;
+    bottom:calc(24px + env(safe-area-inset-bottom));
+    display:flex; align-items:center; justify-content:center; gap:24px;
+  }
+  .ctl{
+    appearance:none; border:0; cursor:pointer; color:var(--cream); font-weight:800;
+    background:rgba(0,0,0,.5); backdrop-filter:blur(6px);
+    width:52px; height:52px; border-radius:999px; font-size:21px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #shot{
+    width:72px; height:72px; border-radius:999px; cursor:pointer;
+    border:5px solid var(--cream);
+    background:var(--red);
+    box-shadow:0 6px 18px rgba(255,26,0,.55);
+  }
+
+  /* ---------------- tap-to-start gate ----------------
+     Mobile browsers only hand over the camera after a user gesture, so the
+     booth cannot auto-open; this is the single tap that starts it. */
+  #gate{
+    position:fixed; inset:0; z-index:6;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:18px; padding:30px; text-align:center;
+    background:var(--cream); color:var(--red);
+    background-image:
+      repeating-linear-gradient(0deg,  rgba(255,26,0,.05) 0 1px, transparent 1px 22px),
+      repeating-linear-gradient(90deg, rgba(255,26,0,.05) 0 1px, transparent 1px 22px);
+    transition:opacity .45s ease;
+  }
+  #gate.hide{ opacity:0; pointer-events:none; }
+  #gate img{ width:min(78vw,320px); height:auto; }
+  #gate h1{
+    font-family:"Alfa Slab One",Georgia,Impact,serif; font-weight:400;
+    font-size:clamp(22px,7vw,36px); line-height:1; text-transform:uppercase;
+    text-shadow:2px 2px 0 var(--cream), 4px 4px 0 rgba(0,0,0,.2);
+  }
+  #gate p{ max-width:330px; line-height:1.5; font-size:13px; letter-spacing:.04em; }
+  #startBtn{
+    appearance:none; border:3px solid var(--red); cursor:pointer;
+    font-family:inherit; font-size:16px; letter-spacing:.06em;
+    padding:16px 28px; border-radius:14px;
+    color:var(--red); background:var(--yellow);
+    box-shadow:0 5px 0 var(--red);
+  }
+  #gate small{ font-size:11px; letter-spacing:.1em; opacity:.75; min-height:15px; }
+  #gate a{ color:var(--red); font-size:11px; letter-spacing:.1em; }
+
+  /* ---------------- photo preview ---------------- */
+  #photoView{
+    position:fixed; inset:0; z-index:7; display:none;
+    flex-direction:column; align-items:center; justify-content:center; gap:14px;
+    background:rgba(20,8,4,.94); padding:22px;
+  }
+  #photoView.show{ display:flex; }
+  #photoView img{
+    max-width:92%; max-height:62vh; border-radius:8px;
+    box-shadow:0 12px 40px rgba(0,0,0,.6);
+  }
+  #photoView .row{ display:flex; gap:12px; flex-wrap:wrap; justify-content:center; }
+  .pbtn{
+    appearance:none; border:0; cursor:pointer;
+    font-family:inherit; font-size:14px; letter-spacing:.06em;
+    padding:13px 22px; border-radius:12px;
+    color:var(--red); background:var(--yellow);
+    box-shadow:0 4px 0 rgba(0,0,0,.3);
+  }
+  .pbtn.secondary{
+    background:transparent; color:var(--cream);
+    border:2px solid rgba(255,246,236,.5); box-shadow:none;
+  }
+  #photoHint{
+    color:var(--cream); font-size:11px; letter-spacing:.08em;
+    text-align:center; max-width:330px; line-height:1.6; min-height:15px;
+  }
+
+  #flash{ position:fixed; inset:0; z-index:8; background:#fff; opacity:0; pointer-events:none; }
+  #flash.fire{ animation:flash .35s ease-out; }
+  @keyframes flash{ 0%{opacity:.9;} 100%{opacity:0;} }
+</style>
+</head>
+<body>
+
+  <video id="cam" playsinline muted autoplay></video>
+
+  <!-- frame: sign top, ribbon bottom, subject in the clear middle -->
+  <div id="frame">
+    <img id="sign" src="img/amps_science_sign_cut.png"
+         alt="AMPS Science — 99% Science 1% Magic" crossorigin="anonymous" />
+    <div id="ribbon">EST. 2025 &nbsp;&middot;&nbsp; SERVED FRESH DAILY</div>
+  </div>
+  <div id="border"></div>
+
+  <!-- the actual photo filters -->
+  <div id="looks"></div>
+
+  <div id="controls">
+    <button class="ctl" id="flip" title="Flip camera">&#128260;</button>
+    <button id="shot" title="Take photo"></button>
+    <button class="ctl" id="close" title="Close" style="font-size:19px;">&#10005;</button>
+  </div>
+
+  <div id="gate">
+    <img src="img/amps_science_sign_cut.png" alt="AMPS Science" />
+    <h1>Photo Booth</h1>
+    <p>Grab a shot any time this week &mdash; pick a look, strike a pose, then share it with the team.</p>
+    <button id="startBtn">&#128247; OPEN THE BOOTH</button>
+    <small id="gateMsg"></small>
+    <a href="menu.html">&larr; back to the menu</a>
+  </div>
+
+  <div id="photoView">
+    <img id="photoImg" alt="Your photo" />
+    <div class="row">
+      <button class="pbtn" id="photoShare">SHARE / SAVE</button>
+      <button class="pbtn secondary" id="photoClose">RETAKE</button>
+    </div>
+    <div id="photoHint"></div>
+  </div>
+
+  <div id="flash"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const CREAM = "#fff6ec", RED = "#ff1a00", YELLOW = "#fdd921";
+  const $ = id => document.getElementById(id);
+  const camVideo = $("cam"), gate = $("gate"), photoView = $("photoView"),
+        photoImg = $("photoImg"), flash = $("flash"), signImg = $("sign");
+
+  /* ------------------------------------------------------------------
+     THE LOOKS. Each is a CSS filter string, applied to the <video> for
+     live preview and to ctx.filter on capture so the saved photo matches
+     what was on screen.
+     ------------------------------------------------------------------ */
+  const LOOKS = [
+    { id:"diner",  name:"DINER",       css:"saturate(1.45) contrast(1.12) sepia(.22) brightness(1.04)" },
+    /* Tuned down from saturate(2.3) contrast(1.75): the stronger version
+       turned skin orange and blew out highlights on real faces. */
+    { id:"print",  name:"POSTER",      css:"saturate(1.85) contrast(1.28)" },
+    { id:"classic",name:"CLASSIC",     css:"none" },
+    { id:"noir",   name:"NOIR",        css:"grayscale(1) contrast(1.35) brightness(1.03)" }
+  ];
+  let look = LOOKS[0];
+
+  (function buildLooks(){
+    const wrap = $("looks");
+    LOOKS.forEach(l => {
+      const b = document.createElement("button");
+      b.className = "look" + (l === look ? " on" : "");
+      b.textContent = l.name;
+      b.dataset.id = l.id;
+      b.addEventListener("click", () => setLook(l));
+      wrap.appendChild(b);
+    });
+  })();
+
+  function setLook(l){
+    look = l;
+    camVideo.style.filter = (l.css === "none") ? "" : l.css;
+    document.querySelectorAll(".look").forEach(b =>
+      b.classList.toggle("on", b.dataset.id === l.id));
+  }
+  setLook(look);
+
+  // ---------------- camera ----------------
+  let camFacing = "user";   // open in selfie mode
+  async function startCamera(facing){
+    camFacing = facing || camFacing;
+    if(camVideo.srcObject){
+      camVideo.srcObject.getTracks().forEach(t => t.stop());
+      camVideo.srcObject = null;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ ideal: camFacing } }, audio:false
+    });
+    camVideo.srcObject = stream;
+    camVideo.classList.toggle("mirror", camFacing === "user");
+    await camVideo.play().catch(()=>{});
+  }
+
+  let flipping = false;
+  async function flipCamera(){
+    if(flipping) return;
+    flipping = true;
+    try{ await startCamera(camFacing === "user" ? "environment" : "user"); }
+    catch(_){ /* stay on the current camera */ }
+    flipping = false;
+  }
+
+  async function launch(){
+    $("gateMsg").textContent = "Opening the camera…";
+    try{
+      await startCamera("user");
+      gate.classList.add("hide");
+      $("gateMsg").textContent = "";
+    }catch(err){
+      $("gateMsg").textContent = "Couldn't open the camera — check permissions and tap again.";
+    }
+  }
+
+  // ---------------- capture ----------------
+  let lastBlob = null;
+
+  // object-fit:cover, done by hand so the photo frames like the preview
+  function drawCover(ctx, video, W, H, mirror){
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if(!vw || !vh){ ctx.fillStyle = "#100704"; ctx.fillRect(0,0,W,H); return; }
+    const scale = Math.max(W/vw, H/vh);
+    const dw = vw*scale, dh = vh*scale;
+    ctx.save();
+    if(mirror){ ctx.translate(W,0); ctx.scale(-1,1); }
+    ctx.drawImage(video, (W-dw)/2, (H-dh)/2, dw, dh);
+    ctx.restore();
+  }
+
+  function roundRect(ctx, x, y, w, h, r){
+    r = Math.min(r, w/2, h/2);
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.arcTo(x+w, y,   x+w, y+h, r);
+    ctx.arcTo(x+w, y+h, x,   y+h, r);
+    ctx.arcTo(x,   y+h, x,   y,   r);
+    ctx.arcTo(x,   y,   x+w, y,   r);
+    ctx.closePath();
+  }
+
+  // The ribbon is CSS (rounded pill + letter-spaced text), so it has to be
+  // redrawn rather than copied — positioned from its on-screen rect.
+  function drawRibbon(ctx, sx, sy){
+    const el = $("ribbon"), r = el.getBoundingClientRect();
+    if(r.width <= 0) return;
+    const x = r.left*sx, y = r.top*sy, w = r.width*sx, h = r.height*sy;
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,.25)";
+    roundRect(ctx, x, y + 4*sy, w, h, h/2); ctx.fill();
+    ctx.fillStyle = RED;
+    roundRect(ctx, x, y, w, h, h/2); ctx.fill();
+
+    const fs = parseFloat(getComputedStyle(el).fontSize) * sy;
+    ctx.fillStyle = YELLOW;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = '400 ' + fs + 'px "Archivo Black", Impact, sans-serif';
+    drawSpaced(ctx, el.textContent.trim().replace(/\s+/g," "),
+               x + w/2, y + h/2, fs*0.16);
+    ctx.restore();
+  }
+
+  // canvas has no letter-spacing, and the ribbon's .16em tracking is a big
+  // part of the diner look — so space the glyphs manually.
+  function drawSpaced(ctx, text, cx, cy, extra){
+    const chars = [...text];
+    let total = 0;
+    chars.forEach(c => { total += ctx.measureText(c).width + extra; });
+    total -= extra;
+    let x = cx - total/2;
+    ctx.textAlign = "left";
+    chars.forEach(c => {
+      ctx.fillText(c, x, cy);
+      x += ctx.measureText(c).width + extra;
+    });
+    ctx.textAlign = "center";
+  }
+
+  function drawBorder(ctx, W, H, sx, sy){
+    const bw = 10*sx, inset = 3*sx;
+    ctx.save();
+    ctx.fillStyle = CREAM;
+    ctx.fillRect(0,0,W,bw); ctx.fillRect(0,H-bw,W,bw);
+    ctx.fillRect(0,0,bw,H); ctx.fillRect(W-bw,0,bw,H);
+    ctx.strokeStyle = "rgba(255,26,0,.75)";
+    ctx.lineWidth = 2*sx;
+    ctx.setLineDash([4*sx, 4*sx]);
+    ctx.strokeRect(inset, inset, W-inset*2, H-inset*2);
+    ctx.restore();
+  }
+
+  function drawFrame(ctx, W, H){
+    const sx = W/window.innerWidth, sy = H/window.innerHeight;
+    ctx.filter = "none";                       // the frame is never graded
+    if(signImg.complete && signImg.naturalWidth){
+      const r = signImg.getBoundingClientRect();
+      if(r.width > 0) ctx.drawImage(signImg, r.left*sx, r.top*sy, r.width*sx, r.height*sy);
+    }
+    drawRibbon(ctx, sx, sy);
+    drawBorder(ctx, W, H, sx, sy);
+  }
+
+  async function takePhoto(){
+    // wait for Archivo Black, or the ribbon text falls back mid-draw
+    if(document.fonts && document.fonts.ready){ try{ await document.fonts.ready; }catch(_){} }
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = Math.round(window.innerWidth * dpr);
+    const H = Math.round(window.innerHeight * dpr);
+    const out = document.createElement("canvas");
+    out.width = W; out.height = H;
+    const ctx = out.getContext("2d");
+
+    // ctx.filter is unsupported on some older mobile browsers; the photo then
+    // comes out ungraded rather than failing, and we say so in the hint.
+    const graded = ("filter" in ctx) && look.css !== "none";
+    if(graded) ctx.filter = look.css;
+    drawCover(ctx, camVideo, W, H, camVideo.classList.contains("mirror"));
+    drawFrame(ctx, W, H);
+
+    flash.classList.remove("fire"); void flash.offsetWidth; flash.classList.add("fire");
+
+    lastBlob = await new Promise(res => out.toBlob(res, "image/png"));
+    photoImg.src = URL.createObjectURL(lastBlob);
+    $("photoHint").textContent = (!("filter" in ctx) && look.css !== "none")
+      ? "Saved without the " + look.name + " tint — this browser can't bake filters into the file."
+      : "Share it with the team, or save it and send it over.";
+    photoView.classList.add("show");
+  }
+
+  async function sharePhoto(){
+    if(!lastBlob) return;
+    const name = "amps-science-" + look.id + ".png";
+    const file = new File([lastBlob], name, { type:"image/png" });
+    if(navigator.canShare && navigator.canShare({ files:[file] })){
+      try{ await navigator.share({ files:[file], title:"AMPS Science Photo Booth" }); return; }
+      catch(_){ /* cancelled — fall through to a download */ }
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(lastBlob);
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    $("photoHint").textContent = "Saved to your downloads.";
+  }
+
+  function closeBooth(){
+    if(camVideo.srcObject){
+      camVideo.srcObject.getTracks().forEach(t => t.stop());
+      camVideo.srcObject = null;
+    }
+    photoView.classList.remove("show");
+    gate.classList.remove("hide");
+  }
+
+  $("startBtn").addEventListener("click", launch);
+  $("flip").addEventListener("click", flipCamera);
+  $("shot").addEventListener("click", takePhoto);
+  $("close").addEventListener("click", closeBooth);
+  $("photoShare").addEventListener("click", sharePhoto);
+  $("photoClose").addEventListener("click", ()=> photoView.classList.remove("show"));
+})();
+</script>
+</body>
+</html>

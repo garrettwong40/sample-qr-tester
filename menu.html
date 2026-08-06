@@ -170,6 +170,50 @@
     ol.items.two-col .name{ font-size: clamp(15px, 4.4vw, 26px); }
   }
 
+  /* ---------------- PHOTO BOOTH CALL-TO-ACTION ----------------
+     Styled as a course of the menu rather than a web button, so it reads as
+     part of the board: yellow plate, red rule, hard offset shadow. */
+  .booth{
+    display:block;
+    text-decoration:none;
+    background: var(--yellow);
+    border: 3px solid var(--red);
+    border-radius: 14px;
+    padding: clamp(13px, 3.2vw, 20px) 16px;
+    text-align:center;
+    box-shadow: 0 5px 0 var(--red);
+    margin-bottom: clamp(26px, 6vw, 44px);
+  }
+  .booth:active{
+    transform: translateY(4px);
+    box-shadow: 0 1px 0 var(--red);
+  }
+  .booth .kicker{
+    display:block;
+    font-size: clamp(9px, 2.3vw, 12px);
+    letter-spacing:.18em;
+    color: var(--red);
+    opacity:.85;
+    margin-bottom:6px;
+  }
+  .booth h2{
+    font-family: "Alfa Slab One", Georgia, Impact, serif;
+    font-weight: 400;
+    font-size: clamp(18px, 5.6vw, 32px);
+    line-height:1;
+    text-transform:uppercase;
+    color: var(--red);
+    text-shadow: 2px 2px 0 var(--cream), 4px 4px 0 rgba(0,0,0,.22);
+  }
+  .booth .sub{
+    display:block;
+    margin-top:8px;
+    font-size: clamp(9px, 2.3vw, 12px);
+    letter-spacing:.14em;
+    color: var(--red);
+    opacity:.85;
+  }
+
   /* ---------------- FOOTER STARBURST ---------------- */
   .footer{
     text-align:center;
@@ -229,6 +273,14 @@
        alt="AMPS Science — Best in the Town — 99% Science 1% Magic" />
 
   <div class="ribbon">EST. 2025 &nbsp;&middot;&nbsp; SERVED FRESH DAILY &nbsp;&middot;&nbsp; NO SUBSTITUTIONS</div>
+
+  <!-- Photo booth: same QR, second destination. Sits above the courses so
+       it's the first thing found after scanning. -->
+  <a class="booth" href="filter.html">
+    <span class="kicker">&#128247; TODAY'S SPECIAL</span>
+    <h2>Snap a Photo</h2>
+    <span class="sub">PICK A LOOK &nbsp;&middot;&nbsp; TAKE A PIC &nbsp;&middot;&nbsp; SHARE IT WITH THE TEAM</span>
+  </a>
 
   <!-- ============ COURSE 1: EXECUTIVE TEAM ============ -->
   <section class="course">
