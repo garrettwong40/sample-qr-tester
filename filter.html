@@ -61,6 +61,38 @@
     50%    { transform: translateY(-8px) rotate(.6deg); }
   }
 
+  /* ---------------- MESSI MODE jersey ----------------
+     A prop the wearer positions themselves: no pose tracking, just drag it
+     onto your torso and pinch it to size. Sits at the same z-index as #frame
+     but earlier in the DOM, so the sign, ribbon and border still paint over
+     it — and it's the one overlay element that accepts touches. */
+  #jersey{
+    position:fixed; z-index:1; display:none;
+    /* Default lands the collar on the shoulders of someone framed head-and-
+       chest. Lower/narrower left a bare neck gap; higher swallowed the chin. */
+    left:50%; top:58.5%; width:min(82vw, 350px); height:auto;
+    transform:translate(-50%,-50%) scale(1);
+    transform-origin:50% 50%;
+    filter: drop-shadow(0 8px 16px rgba(0,0,0,.42));
+    touch-action:none;            /* we handle drag + pinch ourselves */
+    cursor:grab; user-select:none; -webkit-user-drag:none;
+  }
+  #jersey.on{ display:block; }
+  #jersey.grabbing{ cursor:grabbing; }
+
+  /* Transient toast in the clear band between the sign and the torso — the
+     bottom of the screen is already full (ribbon, look chips, shutter), and
+     at bottom:150px this landed right on the ribbon. Never drawn into the
+     capture: it's a UI hint, not part of the photo. */
+  #fitHint{
+    position:fixed; left:0; right:0; z-index:3; text-align:center;
+    top:calc(26vh + env(safe-area-inset-top));
+    font-size:10px; letter-spacing:.14em; color:var(--cream);
+    text-shadow:0 1px 4px rgba(0,0,0,.9);
+    pointer-events:none; opacity:0; transition:opacity .25s ease;
+  }
+  #fitHint.show{ opacity:.92; }
+
   #ribbon{
     background:var(--red); color:var(--yellow);
     text-align:center; letter-spacing:.16em;
@@ -75,16 +107,40 @@
   }
 
   /* ---------------- look picker ---------------- */
+  /* One scrolling row, not flex-wrap: at five looks the chips wrapped onto a
+     second line and pushed up into the ribbon. */
   #looks{
     position:fixed; left:0; right:0; z-index:3;
     bottom:calc(108px + env(safe-area-inset-bottom));
-    display:flex; gap:8px; justify-content:center; flex-wrap:wrap;
-    padding:0 16px;
+    display:flex; gap:7px; padding:0 14px;
+    overflow-x:auto; overflow-y:hidden;
+    scrollbar-width:none; -webkit-overflow-scrolling:touch;
   }
+  /* Auto-margin spacers instead of justify-content:center — centering a
+     scroll container with justify-content makes the first chip unreachable,
+     and `safe center` isn't supported widely enough to rely on. Auto margins
+     absorb the free space when the chips fit and collapse to 0 when they
+     don't, so the row centers or scrolls correctly with no feature checks. */
+  #looks::before, #looks::after{ content:""; margin:auto; }
+  #looks::-webkit-scrollbar{ display:none; }
+  /* Soft edges so a scrolled-off chip reads as "there's more this way"
+     rather than as a chip clipped by the screen. */
+  #looksWrap{
+    position:fixed; left:0; right:0; z-index:3;
+    bottom:calc(108px + env(safe-area-inset-bottom));
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 22px,
+                        #000 calc(100% - 22px), transparent 100%);
+            mask-image: linear-gradient(90deg, transparent 0, #000 22px,
+                        #000 calc(100% - 22px), transparent 100%);
+  }
+  #looksWrap #looks{ position:static; bottom:auto; }
   .look{
-    appearance:none; cursor:pointer;
-    font-family:inherit; font-size:11px; letter-spacing:.1em;
-    padding:8px 13px; border-radius:999px;
+    appearance:none; cursor:pointer; flex:0 0 auto; white-space:nowrap;
+    /* Tightened from 11px/13px when MESSI MODE became a fifth chip: at the
+       old size the row overflowed even a 390px phone. It still scrolls if it
+       has to (long labels, small screens), which is why the row is a scroller. */
+    font-family:inherit; font-size:10px; letter-spacing:.07em;
+    padding:8px 11px; border-radius:999px;
     color:var(--cream); background:rgba(0,0,0,.5);
     border:2px solid rgba(255,246,236,.45);
     backdrop-filter:blur(6px);
@@ -181,6 +237,12 @@
 
   <video id="cam" playsinline muted autoplay></video>
 
+  <!-- MESSI MODE: drag/pinch onto your torso. Before #frame so the sign and
+       ribbon stay on top of it. -->
+  <img id="jersey" src="img/jersey_messi.png" alt="Messi 10 jersey"
+       crossorigin="anonymous" draggable="false" />
+  <div id="fitHint">DRAG TO PLACE &nbsp;&middot;&nbsp; PINCH TO SIZE</div>
+
   <!-- frame: sign top, ribbon bottom, subject in the clear middle -->
   <div id="frame">
     <img id="sign" src="img/amps_science_sign_cut.png"
@@ -189,8 +251,8 @@
   </div>
   <div id="border"></div>
 
-  <!-- the actual photo filters -->
-  <div id="looks"></div>
+  <!-- the actual photo filters: scrolling row, faded at both edges -->
+  <div id="looksWrap"><div id="looks"></div></div>
 
   <div id="controls">
     <button class="ctl" id="flip" title="Flip camera">&#128260;</button>
@@ -225,22 +287,37 @@
   const CREAM = "#fff6ec", RED = "#ff1a00", YELLOW = "#fdd921";
   const $ = id => document.getElementById(id);
   const camVideo = $("cam"), gate = $("gate"), photoView = $("photoView"),
-        photoImg = $("photoImg"), flash = $("flash"), signImg = $("sign");
+        photoImg = $("photoImg"), flash = $("flash"), signImg = $("sign"),
+        jersey = $("jersey"), fitHint = $("fitHint");
 
   /* ------------------------------------------------------------------
-     THE LOOKS. Each is a CSS filter string, applied to the <video> for
-     live preview, and re-implemented in pixel math by gradeCanvas() on
-     capture so the saved photo matches what was on screen.
+     THE LOOKS.
+
+     css: a CSS filter string, applied to the <video> for live preview and
+          re-implemented in pixel math by gradeCanvas() on capture so the
+          saved photo matches what was on screen.
+     prop: optional — turns on the draggable jersey overlay. Not a color
+          grade, so it rides along as its own element rather than going
+          through the filter chain.
+
+     Five chips overflow a 360-390px phone, so the row scrolls — which is why
+     MESSI MODE is listed FIRST: at the far end it would start off-screen and
+     most people would never scroll to find it. `start:true` marks the look the
+     booth OPENS on, so display order and default are independent.
      ------------------------------------------------------------------ */
   const LOOKS = [
-    { id:"diner",  name:"DINER",       css:"saturate(1.45) contrast(1.12) sepia(.22) brightness(1.04)" },
+    /* The joke: Messi in a Real Madrid shirt. Grade is a light warm punch so
+       the white kit doesn't clip. */
+    { id:"messi",  name:"MESSI MODE",  css:"saturate(1.25) contrast(1.08)", prop:"jersey" },
+    { id:"diner",  name:"DINER",       css:"saturate(1.45) contrast(1.12) sepia(.22) brightness(1.04)",
+      start:true },
     /* Tuned down from saturate(2.3) contrast(1.75): the stronger version
        turned skin orange and blew out highlights on real faces. */
     { id:"print",  name:"POSTER",      css:"saturate(1.85) contrast(1.28)" },
     { id:"classic",name:"CLASSIC",     css:"none" },
     { id:"noir",   name:"NOIR",        css:"grayscale(1) contrast(1.35) brightness(1.03)" }
   ];
-  let look = LOOKS[0];
+  let look = LOOKS.find(l => l.start) || LOOKS[0];
 
   (function buildLooks(){
     const wrap = $("looks");
@@ -259,7 +336,95 @@
     camVideo.style.filter = (l.css === "none") ? "" : l.css;
     document.querySelectorAll(".look").forEach(b =>
       b.classList.toggle("on", b.dataset.id === l.id));
+
+    const wearing = l.prop === "jersey";
+    jersey.classList.toggle("on", wearing);
+    // flash the fit instructions each time the prop comes on, then fade out
+    fitHint.classList.toggle("show", wearing);
+    if(wearing){
+      clearTimeout(hintTimer);
+      hintTimer = setTimeout(()=> fitHint.classList.remove("show"), 3200);
+    }
   }
+  let hintTimer = 0;
+
+  /* ---------------- placing the jersey ----------------
+     No pose model: the wearer drags it onto themselves and pinches it to
+     size, which is both far lighter than segmentation and funnier, since
+     nobody lines it up quite right. State lives here (not in the CSS) so
+     the capture canvas can read the exact same numbers. */
+  const fit = { x:0, y:0, scale:1 };   // x/y are CSS-px offsets from the base position
+
+  function applyFit(){
+    jersey.style.transform =
+      "translate(-50%,-50%) translate(" + fit.x + "px," + fit.y + "px) scale(" + fit.scale + ")";
+  }
+  applyFit();
+
+  const pointers = new Map();
+  let dragStart = null;
+
+  function pinchSpan(){
+    const p = [...pointers.values()];
+    return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+  }
+  function pinchMid(){
+    const p = [...pointers.values()];
+    return { x:(p[0].x + p[1].x)/2, y:(p[0].y + p[1].y)/2 };
+  }
+
+  jersey.addEventListener("pointerdown", e => {
+    jersey.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    jersey.classList.add("grabbing");
+    if(pointers.size === 1){
+      dragStart = { px:e.clientX, py:e.clientY, x:fit.x, y:fit.y };
+    }else if(pointers.size === 2){
+      dragStart = { span:pinchSpan(), scale:fit.scale,
+                    mid:pinchMid(), x:fit.x, y:fit.y };
+    }
+    e.preventDefault();
+  });
+
+  jersey.addEventListener("pointermove", e => {
+    if(!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if(pointers.size === 1 && dragStart && dragStart.px !== undefined){
+      fit.x = dragStart.x + (e.clientX - dragStart.px);
+      fit.y = dragStart.y + (e.clientY - dragStart.py);
+    }else if(pointers.size === 2 && dragStart && dragStart.span){
+      const span = pinchSpan();
+      fit.scale = Math.max(0.4, Math.min(2.6,
+        dragStart.scale * (span / dragStart.span)));
+      // follow the midpoint too, so a two-finger move still pans
+      const mid = pinchMid();
+      fit.x = dragStart.x + (mid.x - dragStart.mid.x);
+      fit.y = dragStart.y + (mid.y - dragStart.mid.y);
+    }
+    applyFit();
+    e.preventDefault();
+  });
+
+  function endPointer(e){
+    pointers.delete(e.pointerId);
+    if(pointers.size === 0){
+      jersey.classList.remove("grabbing");
+      dragStart = null;
+    }else if(pointers.size === 1){
+      // lifting one finger of a pinch: re-seat the drag origin or the jersey
+      // jumps by the gap between the old midpoint and the remaining finger
+      const p = [...pointers.values()][0];
+      dragStart = { px:p.x, py:p.y, x:fit.x, y:fit.y };
+    }
+  }
+  jersey.addEventListener("pointerup", endPointer);
+  jersey.addEventListener("pointercancel", endPointer);
+
+  // double-tap the jersey to reset a badly mangled fit
+  jersey.addEventListener("dblclick", () => {
+    fit.x = 0; fit.y = 0; fit.scale = 1; applyFit();
+  });
+
   setLook(look);
 
   // ---------------- camera ----------------
@@ -450,6 +615,23 @@
     ctx.restore();
   }
 
+  /* The jersey is only translated and scaled — never rotated — so its
+     bounding rect IS its visual box, and one drawImage reproduces exactly
+     what's on screen. Drawn after the grade (it's a prop, not part of the
+     photo) and before the frame (the sign still sits on top). */
+  function drawJersey(ctx, sx, sy){
+    if(!jersey.classList.contains("on")) return;
+    if(!jersey.complete || !jersey.naturalWidth) return;
+    const r = jersey.getBoundingClientRect();
+    if(r.width <= 0) return;
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,.42)";
+    ctx.shadowBlur = 16*sx;
+    ctx.shadowOffsetY = 8*sy;
+    ctx.drawImage(jersey, r.left*sx, r.top*sy, r.width*sx, r.height*sy);
+    ctx.restore();
+  }
+
   function drawFrame(ctx, W, H){
     const sx = W/window.innerWidth, sy = H/window.innerHeight;
     // no ctx.filter reset needed: grading already ran as a pixel pass
@@ -477,6 +659,7 @@
     // them takes the look.
     drawCover(ctx, camVideo, W, H, camVideo.classList.contains("mirror"));
     gradeCanvas(ctx, W, H, look.css);
+    drawJersey(ctx, W/window.innerWidth, H/window.innerHeight);
     drawFrame(ctx, W, H);
 
     flash.classList.remove("fire"); void flash.offsetWidth; flash.classList.add("fire");
